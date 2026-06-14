@@ -5,5 +5,12 @@
     "failure_reports": 0,
     "limits": {},
     "last_seen": 1718290000
+  },
+  "Toverland": {
+    "generated_scripts": 0,
+    "success_reports": 0,
+    "failure_reports": 0,
+    "limits": {},
+    "last_seen": 1781435213
   }
 }
