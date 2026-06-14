@@ -7,10 +7,10 @@
     "last_seen": 1718290000
   },
   "Toverland": {
-    "generated_scripts": 0,
+    "generated_scripts": 1,
     "success_reports": 0,
     "failure_reports": 0,
     "limits": {},
-    "last_seen": 1781435213
+    "last_seen": 1781435230
   }
 }
