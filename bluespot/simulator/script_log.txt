@@ -3,42 +3,29 @@ Took before screenshot.
 Could not click button: Message: no such element: Unable to locate element: {"method":"xpath","selector":"//button | //input[@type='submit'] | //a[contains(@class, 'btn')]"}
   (Session info: chrome=149.0.7827.114); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#nosuchelementexception
 Stacktrace:
-#0 0x55558deae3dc <unknown>
-#1 0x55558d8e3d3c <unknown>
-#2 0x55558d92ce90 <unknown>
-#3 0x55558d96e8d4 <unknown>
-#4 0x55558d9223c0 <unknown>
-#5 0x55558de741bc <unknown>
-#6 0x55558de72d2c <unknown>
-#7 0x55558de728c0 <unknown>
-#8 0x55558de62aac <unknown>
-#9 0x55558de733e4 <unknown>
-#10 0x55558de4e598 <unknown>
-#11 0x55558de9a9b4 <unknown>
-#12 0x55558de9ab98 <unknown>
-#13 0x55558deacde0 <unknown>
-#14 0x7fff68cd5f34 <unknown>
-#15 0x7fff68d3dc28 <unknown>
+#0 0x555582abe3dc <unknown>
+#1 0x5555824f3d3c <unknown>
+#2 0x55558253ce90 <unknown>
+#3 0x55558257e8d4 <unknown>
+#4 0x5555825323c0 <unknown>
+#5 0x555582a841bc <unknown>
+#6 0x555582a82d2c <unknown>
+#7 0x555582a828c0 <unknown>
+#8 0x555582a72aac <unknown>
+#9 0x555582a833e4 <unknown>
+#10 0x555582a5e598 <unknown>
+#11 0x555582aaa9b4 <unknown>
+#12 0x555582aaab98 <unknown>
+#13 0x555582abcde0 <unknown>
+#14 0x7fffaf455f34 <unknown>
+#15 0x7fffaf4bdc28 <unknown>
 
 
 --- Running Bash Script ---
 STDOUT:
 Bluespot login script started for SSID: bluespot
 ERROR: Could not find login action URL in portal HTML.
-<!DOCTYPE HTML>
-<html lang="en">
-    <head>
-        <meta charset="utf-8">
-        <title>Error response</title>
-    </head>
-    <body>
-        <h1>Error response</h1>
-        <p>Error code: 501</p>
-        <p>Message: Unsupported method ('POST').</p>
-        <p>Error code explanation: 501 - Server does not support this operation.</p>
-    </body>
-</html>
-
+<html><body>Success! (Mocked POST response)</body></html>
 STDERR:
 
 EXIT CODE: 1
