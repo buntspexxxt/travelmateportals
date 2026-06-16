@@ -1,12 +1,43 @@
 --- Simulator Log for bluespot ---
-Selenium Error: Message: Unable to obtain driver for chrome; For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors/driver_location
+Took before screenshot.
+Could not click button: Message: no such element: Unable to locate element: {"method":"xpath","selector":"//button | //input[@type='submit'] | //a[contains(@class, 'btn')]"}
+  (Session info: chrome=149.0.7827.114); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#nosuchelementexception
+Stacktrace:
+#0 0x55558deae3dc <unknown>
+#1 0x55558d8e3d3c <unknown>
+#2 0x55558d92ce90 <unknown>
+#3 0x55558d96e8d4 <unknown>
+#4 0x55558d9223c0 <unknown>
+#5 0x55558de741bc <unknown>
+#6 0x55558de72d2c <unknown>
+#7 0x55558de728c0 <unknown>
+#8 0x55558de62aac <unknown>
+#9 0x55558de733e4 <unknown>
+#10 0x55558de4e598 <unknown>
+#11 0x55558de9a9b4 <unknown>
+#12 0x55558de9ab98 <unknown>
+#13 0x55558deacde0 <unknown>
+#14 0x7fff68cd5f34 <unknown>
+#15 0x7fff68d3dc28 <unknown>
 
 
 --- Running Bash Script ---
 STDOUT:
 Bluespot login script started for SSID: bluespot
 ERROR: Could not find login action URL in portal HTML.
-{"status":"logged"}
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Error response</title>
+    </head>
+    <body>
+        <h1>Error response</h1>
+        <p>Error code: 501</p>
+        <p>Message: Unsupported method ('POST').</p>
+        <p>Error code explanation: 501 - Server does not support this operation.</p>
+    </body>
+</html>
 
 STDERR:
 
