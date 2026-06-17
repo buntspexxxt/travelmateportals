@@ -1,52 +1,128 @@
 #!/bin/sh
-# Travelmate login script for bluespot captive portal
 
-# Variables provided by travelmate (these are typically set by trm_client):
-# portal_url    The URL of the captive portal's entry point (e.g., http://192.168.x.x/login)
-# portal_html   The HTML content of the captive portal's entry point (as detected by trm_client)
-# trm_user      Travelmate username (if configured in LuCI)
-# trm_pass      Travelmate password (if configured in LuCI)
+# Configuration
+SSID="bluespot"
+PORTAL_URL="https://portal.wificloud.network/bluespot-oneclick/login"
+PING_HOST="8.8.8.8" # Google DNS for internet connectivity check
 
-status="failure"
-report_url="https://joplin.specht.tv/report" # Reporting endpoint
+# Function to log messages to syslog and stdout
+log() {
+    logger -t "CaptivePortalLogin" "$@"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') CaptivePortalLogin: $@"
+}
 
-echo "Bluespot login script started for SSID: bluespot"
+# Function to check for internet connectivity by pinging a reliable host
+check_internet() {
+    log "Checking internet connectivity to $PING_HOST..."
+    # Ping once, wait 2 seconds for response, suppress output
+    if ping -c 1 -W 2 "$PING_HOST" >/dev/null 2>&1; then
+        return 0 # Success, internet is accessible
+    else
+        return 1 # Failure, internet is not accessible
+    fi
+}
 
-# This HTML is a redirect to a "one-click" login page.
-# We need to extract the target URL from the form's action attribute.
-# Example HTML: <form name="redirect" action="https://portal.wificloud.network/bluespot-oneclick/login" method="POST">
-login_action_url=$(echo "$portal_html" | grep -oP 'action="\K[^"]+' | head -n 1)
+# Function to wait for Wi-Fi connection to the specified SSID
+wait_for_wifi() {
+    log "Waiting for Wi-Fi connection to SSID: $SSID..."
+    local attempts=0
+    local max_attempts=30 # Max 30 attempts, with 5-second sleep each (total 2.5 minutes)
 
-if [ -z "$login_action_url" ]; then
-    echo "ERROR: Could not find login action URL in portal HTML."
-    curl -s -X POST "$report_url" -d "ssid=bluespot&status=failure&message=NoLoginURL" &
+    while [ "$attempts" -lt "$max_attempts" ]; do
+        local current_ssid=""
+        local connected_iface=""
+
+        # Iterate through possible wireless client interfaces (those in 'station' or 'client' mode)
+        # Use iwinfo to list all interfaces, then filter for client mode
+        for iface in $(iwinfo | grep "Mode: Client" | awk '{print $1}'); do
+            # Extract ESSID from the interface info, handling potential errors if interface is down/not configured
+            current_ssid=$(iwinfo "$iface" info 2>/dev/null | grep "ESSID:" | head -n 1 | awk -F'"' '{print $2}')
+            
+            # Check if the extracted SSID matches our target SSID
+            if [ -n "$current_ssid" ] && [ "$current_ssid" = "$SSID" ]; then
+                connected_iface="$iface"
+                break # Found our SSID, exit inner loop
+            fi
+        done
+
+        if [ -n "$connected_iface" ]; then
+            log "Connected to Wi-Fi SSID: $current_ssid on interface $connected_iface."
+            return 0 # Successfully connected
+        fi
+
+        attempts=$((attempts + 1))
+        sleep 5
+    done
+
+    log "Failed to connect to Wi-Fi SSID: $SSID after $max_attempts attempts."
+    return 1 # Failed to connect within the timeout
+}
+
+# --- Main Script Logic ---
+
+# 1. Ensure we are connected to the target Wi-Fi network
+if ! wait_for_wifi; then
+    log "Exiting: Not connected to the required Wi-Fi network ($SSID)."
     exit 1
 fi
 
-# The form contains a hidden input: <input type="hidden" name="session" value="" />
-# For a "one-click" portal, we usually just need to submit this form.
-# Since the 'value' attribute is empty in the provided HTML, we set 'session' to an empty string.
-post_data="session="
-
-echo "Detected one-click login target: $login_action_url"
-echo "Attempting to POST to $login_action_url with data: '$post_data'"
-
-# Perform the POST request. The -L flag is crucial as the initial HTML is a redirect,
-# and the portal might issue further redirects after the POST.
-# We discard the output (-o /dev/null) and only capture the HTTP status code.
-response_code=$(curl -s -L -X POST "$login_action_url" --data "$post_data" -o /dev/null -w "%{http_code}")
-response_time=$(curl -s -L -X POST "$login_action_url" --data "$post_data" -o /dev/null -w "%{time_total}") # To log time if needed for debugging
-
-if [ "$response_code" -ge 200 ] && [ "$response_code" -lt 400 ]; then
-    echo "Login attempt successful. HTTP Status: $response_code"
-    status="success"
+# 2. Check current internet status
+if check_internet; then
+    log "Internet is already accessible. No captive portal detected or already logged in."
+    exit 0
 else
-    echo "Login attempt failed. HTTP Status: $response_code"
-    status="failure"
+    log "Internet is not accessible. Attempting captive portal login..."
+
+    # 3. Attempt to log in to the captive portal
+    # Check for curl first, then wget, as curl offers better control for POST requests
+    if command -v curl >/dev/null 2>&1; then
+        log "Using curl to submit portal login request."
+        # -s: Silent mode (don't show progress or error messages)
+        # -L: Follow redirects (important if the portal redirects after POST)
+        # -X POST: Specify POST method
+        # --data "session=": Send the 'session=' payload
+        # -o /dev/null: Discard output
+        if curl -s -L -X POST --data "session=" "$PORTAL_URL" -o /dev/null; then
+            log "Portal login POST request sent. Waiting a few seconds for network to stabilize..."
+            sleep 5 # Give the network a moment to reconfigure after login
+
+            # 4. Verify login success
+            if check_internet; then
+                log "Successfully logged in to captive portal."
+                exit 0
+            else
+                log "Login attempt failed: Internet still not accessible after submitting portal data."
+                exit 1
+            fi
+        else
+            log "Curl command failed to execute the POST request."
+            exit 1
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        log "Using wget to submit portal login request (curl not found)."
+        # -q: Quiet mode (suppress output)
+        # --post-data="session=": Send the 'session=' payload
+        # -O /dev/null: Discard output (uppercase O)
+        if wget -q --post-data="session=" "$PORTAL_URL" -O /dev/null; then
+            log "Portal login POST request sent via wget. Waiting a few seconds for network to stabilize..."
+            sleep 5 # Give the network a moment to reconfigure after login
+
+            # 4. Verify login success
+            if check_internet; then
+                log "Successfully logged in to captive portal."
+                exit 0
+            else
+                log "Login attempt failed: Internet still not accessible after submitting portal data."
+                exit 1
+            fi
+        else
+            log "Wget command failed to execute the POST request."
+            exit 1
+        fi
+    else
+        log "Error: Neither curl nor wget found. Cannot submit portal login request."
+        exit 1
+    fi
 fi
 
-# Send status report to the specified URL
-curl -s -X POST "$report_url" -d "ssid=bluespot&status=$status" &
-echo "Report sent: ssid=bluespot&status=$status"
-
-exit 0
+# JSON_LIMITS: {"limit_type": "NONE"}
