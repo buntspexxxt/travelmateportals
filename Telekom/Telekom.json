@@ -1,0 +1,6 @@
+{
+  "limit_type": "TIME",
+  "limit_value": 24,
+  "unit": "hours",
+  "description": "1 Tag pass, no data volume limit"
+}
