@@ -1,0 +1,6 @@
+{
+  "limit_type": "TIME",
+  "limit_value": 4,
+  "limit_unit": "hours",
+  "notes": "per login, repeated login possible"
+}
