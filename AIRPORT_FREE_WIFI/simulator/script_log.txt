@@ -1,0 +1,32 @@
+--- Simulator Log for AIRPORT_FREE_WIFI ---
+Took before screenshot.
+Could not click button: Message: no such element: Unable to locate element: {"method":"xpath","selector":"//button | //input[@type='submit'] | //a[contains(@class, 'btn')]"}
+  (Session info: chrome=149.0.7827.114); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#nosuchelementexception
+Stacktrace:
+#0 0x55560556e3dc <unknown>
+#1 0x555604fa3d3c <unknown>
+#2 0x555604fece90 <unknown>
+#3 0x55560502e8d4 <unknown>
+#4 0x555604fe23c0 <unknown>
+#5 0x5556055341bc <unknown>
+#6 0x555605532d2c <unknown>
+#7 0x5556055328c0 <unknown>
+#8 0x555605522aac <unknown>
+#9 0x5556055333e4 <unknown>
+#10 0x55560550e598 <unknown>
+#11 0x55560555a9b4 <unknown>
+#12 0x55560555ab98 <unknown>
+#13 0x55560556cde0 <unknown>
+#14 0x7ffec9295f34 <unknown>
+#15 0x7ffec92fdc28 <unknown>
+
+
+--- Running Bash Script ---
+STDOUT:
+2026-06-18 07:36:53 Starting captive portal login script for AIRPORT_FREE_WIFI...
+2026-06-18 07:36:53 Current SSID: ''
+2026-06-18 07:36:53 Could not determine current SSID from client interface. Exiting.
+
+STDERR:
+
+EXIT CODE: 1

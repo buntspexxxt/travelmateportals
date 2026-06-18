@@ -1,106 +1,125 @@
-ash
 #!/bin/sh
 
-# OpenWrt ASH Captive Portal Login Script
+SSID_TARGET="AIRPORT_FREE_WIFI"
+TEST_URL="http://connectivity-check.ubuntu.com/generate_204" # A URL that usually gives 204 or redirects
+PING_TARGET="8.8.8.8"
 
-# Configuration for the captive portal
-TARGET_SSID="AIRPORT_FREE_WIFI"
-# A reliable HTTP site for initial connectivity check.
-# This URL will be redirected to the captive portal if not logged in.
-CHECK_URL="http://neverssl.com"
-# The data to send in the POST request to log in.
-# This is derived from the hidden input field: <input type="hidden" name="login" value="oneclick"/>
-LOGIN_DATA="login=oneclick"
-# Tag for system logs
-LOG_TAG="CaptivePortalLogin"
-# Time in seconds between checks for connectivity and login attempts
-RETRY_INTERVAL=60
-
-# --- Logging Function ---
-# Uses the OpenWrt 'logger' utility to send messages to syslog.
 log() {
-    logger -t "$LOG_TAG" "$1"
+    echo "$(date +"%Y-%m-%d %H:%M:%S") $@"
 }
 
-# --- Function to check if TARGET_SSID is currently connected ---
-# This function queries the OpenWrt wireless status via ubus and jsonfilter
-# to see if any active wireless interface is currently associated with the TARGET_SSID.
-# Requires 'ubus' and 'jsonfilter' to be installed (standard on OpenWrt).
-is_connected_to_target_ssid() {
-    local ssids_output
-    # Get all SSIDs currently reported by wireless interfaces.
-    # jsonfilter outputs each SSID on a new line.
-    ssids_output=$(ubus call network.wireless status 2>/dev/null | jsonfilter -e '@.*.ssid')
-
-    # Check if the TARGET_SSID exists in the list of currently connected SSIDs.
-    # Using 'grep -q' for quiet check and '^...$ ' for exact line match.
-    echo "$ssids_output" | grep -q "^$TARGET_SSID$"
-    return $? # grep returns 0 for match, 1 for no match
-}
-
-# --- Function to check general internet connectivity ---
-# Attempts to ping a reliable external server (Google DNS) to determine if
-# there is full internet access.
-check_internet() {
-    # -c 1: send 1 packet
-    # -W 2: wait 2 seconds for response (timeout)
-    # >/dev/null 2>&1: discard all output (stdout and stderr)
-    ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1
-}
-
-# --- Main Logic Loop ---
-# This loop runs indefinitely, performing checks and login attempts.
-while true; do
-    if is_connected_to_target_ssid; then
-        log "Router is connected to the target SSID: $TARGET_SSID."
-
-        if check_internet; then
-            log "Internet access is already available. No login required."
-        else
-            log "Connected to $TARGET_SSID, but no internet access detected. Attempting captive portal login..."
-
-            # Step 1: Discover the captive portal's effective URL.
-            # When not logged in, requests to CHECK_URL will be redirected to the portal login page.
-            # curl -s: silent mode, -L: follow redirects, -o /dev/null: discard response body
-            # -w "%{url_effective}\n": print the final URL after redirects.
-            EFFECTIVE_URL=$(curl -s -L -o /dev/null -w "%{url_effective}\n" "$CHECK_URL" 2>/dev/null)
-
-            if [ -z "$EFFECTIVE_URL" ]; then
-                log "Error: Failed to get effective URL from '$CHECK_URL'. This might indicate a network issue or the portal is unavailable."
-            else
-                log "Detected effective portal URL: $EFFECTIVE_URL"
-
-                # Extract the hostname from the effective URL.
-                # Example: "http://hotspot.koeln/landingPages/cp/..." -> "hotspot.koeln"
-                LOGIN_HOST=$(echo "$EFFECTIVE_URL" | awk -F'/' '{print $3}')
-                # Construct the full login URL based on the form action="/login" from the HTML.
-                LOGIN_URL="http://${LOGIN_HOST}/login"
-
-                if [ -z "$LOGIN_HOST" ]; then
-                    log "Error: Failed to parse login host from the effective URL '$EFFECTIVE_URL'."
-                else
-                    log "Attempting to POST login data to $LOGIN_URL with parameters: '$LOGIN_DATA'"
-                    # Perform the POST request to the captive portal login endpoint.
-                    # -s: silent, -X POST: specify POST method, -d: send data as application/x-www-form-urlencoded
-                    RESPONSE=$(curl -s -X POST -d "$LOGIN_DATA" "$LOGIN_URL")
-                    # Note: The actual response content (e.g., success message or redirect) is ignored for simplicity,
-                    # as we primarily check for internet access post-login.
-
-                    # Step 3: Verify internet access after the login attempt.
-                    if check_internet; then
-                        log "Captive portal login successful for $TARGET_SSID. Internet access is now available."
-                    else
-                        log "Captive portal login attempt failed for $TARGET_SSID. Still no internet access. Response snippet: ${RESPONSE:0:100}..."
-                    fi
-                fi
-            fi
-        fi
+# Function to check internet connectivity
+check_connectivity() {
+    log "Checking internet connectivity by pinging $PING_TARGET..."
+    if ping -c 1 -W 3 "$PING_TARGET" >/dev/null 2>&1; then
+        log "Internet connection is active."
+        return 0
     else
-        log "Not connected to the target SSID '$TARGET_SSID'. Current connection status unknown or different SSID. Waiting..."
+        log "No internet connection detected."
+        return 1
     fi
+}
 
-    # Wait for the defined interval before the next check.
-    sleep "$RETRY_INTERVAL"
-done
+# Function to get current SSID for a client (station) interface
+get_current_ssid() {
+    # Use ubus to get wireless status. Parse for "mode": "sta" and "ssid"
+    ubus call network.wireless status 2>/dev/null | awk -F'"' '
+        BEGIN {
+            in_sta_block = 0;
+            current_ssid = "";
+        }
+        /"mode": "sta"/ {
+            in_sta_block = 1; # Found a station mode block
+        }
+        /"ssid": "/ {
+            # This line might appear in other contexts too, so only capture if in a sta_block
+            if (in_sta_block == 1) {
+                current_ssid = $4;
+                print current_ssid;
+                exit; # Print the first found station SSID and exit awk
+            }
+        }
+        /}/ {
+            # End of an object, reset block flag
+            in_sta_block = 0;
+        }
+    '
+}
 
-# JSON_LIMITS: {"limit_type": "TIME", "limit_value": 4, "limit_unit": "hours", "notes": "per login, repeated login possible"}
+
+# Main script logic
+log "Starting captive portal login script for $SSID_TARGET..."
+
+CURRENT_SSID=$(get_current_ssid)
+log "Current SSID: '$CURRENT_SSID'"
+
+if [ -z "$CURRENT_SSID" ]; then
+    log "Could not determine current SSID from client interface. Exiting."
+    exit 1
+fi
+
+if [ "$CURRENT_SSID" != "$SSID_TARGET" ]; then
+    log "Not connected to target SSID '$SSID_TARGET'. Connected to '$CURRENT_SSID'. Exiting."
+    exit 0 # Exit silently if not on the target network
+fi
+
+if check_connectivity; then
+    log "Already online. Exiting."
+    exit 0
+fi
+
+log "Attempting to detect captive portal..."
+
+# Try to get the redirect URL
+# Use --max-redirect=0 to prevent wget from following the redirect
+# Use -S to show server response headers (Location)
+# Use -O /dev/null to discard content
+REDIRECT_HEADERS=$(wget -q -S --max-redirect=0 "$TEST_URL" -O /dev/null 2>&1)
+CAPTIVE_PORTAL_LOCATION=$(echo "$REDIRECT_HEADERS" | awk -F'Location: ' '/Location: / {print $2}' | tr -d '\r')
+
+if [ -z "$CAPTIVE_PORTAL_LOCATION" ]; then
+    log "No captive portal redirect found for $TEST_URL. This might mean the portal is already authenticated, or there is a deeper network issue. Exiting."
+    exit 1
+fi
+
+log "Detected captive portal redirect URL: $CAPTIVE_PORTAL_LOCATION"
+
+# Extract the base URL for the login POST request
+# Example: http://hotspot.koeln/landingPages/cp/guqs6n9d/start?redirurl=...
+# We need http://hotspot.koeln
+CAPTIVE_PORTAL_BASE_URL=$(echo "$CAPTIVE_PORTAL_LOCATION" | awk -F'[/]' '{print $1"//"$3}')
+LOGIN_URL="${CAPTIVE_PORTAL_BASE_URL}/login"
+
+log "Extracted captive portal base URL: $CAPTIVE_PORTAL_BASE_URL"
+log "Constructed login URL: $LOGIN_URL"
+
+# Prepare POST data
+# The HTML indicates a hidden input name="login" value="oneclick"
+# The checkbox for terms acceptance has no 'name' attribute, implying it's handled client-side or not checked by the server.
+POST_DATA="login=oneclick"
+log "Sending POST request to $LOGIN_URL with data: '$POST_DATA'"
+
+# Perform the POST request
+# -nv for no verbose output, --no-check-certificate if needed (common on captive portals)
+# -O /dev/null to discard output
+# Use --post-data for POST requests
+wget -nv --no-check-certificate --post-data "$POST_DATA" "$LOGIN_URL" -O /dev/null
+STATUS=$?
+if [ $STATUS -eq 0 ]; then
+    log "POST request sent successfully. Waiting a moment for connection to establish."
+    sleep 5 # Give it a few seconds to register the login
+else
+    log "Failed to send POST request to the captive portal (wget exit status: $STATUS)."
+    exit 1
+fi
+
+# Re-check connectivity after attempting login
+if check_connectivity; then
+    log "Successfully logged into the captive portal!"
+    exit 0
+else
+    log "Login attempt failed. Still no internet connection."
+    exit 1
+fi
+
+# JSON_LIMITS: {"limit_type": "TIME", "limit_value": "4 hours", "comment": "The duration of use with the OneClick procedure is generally limited to four hours from the respective login (repeated login possible)."}
