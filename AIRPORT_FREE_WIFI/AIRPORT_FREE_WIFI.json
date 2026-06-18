@@ -1,5 +1,0 @@
-{
-  "limit_type": "TIME",
-  "limit_value": "4 hours",
-  "comment": "The duration of use with the OneClick procedure is generally limited to four hours from the respective login (repeated login possible)."
-}
