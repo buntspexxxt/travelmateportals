@@ -6,9 +6,28 @@ PORTAL_CHECK_URL="http://detectportal.firefox.com/"
 LANDING_URL=$(curl -L -c "$COOKIE_FILE" -s -o /dev/null -w "%{url_effective}" "$PORTAL_CHECK_URL")
 QUERY_STRING=$(echo "$LANDING_URL" | grep -o '?.*' | cut -c 2-)
 
-POST_DATA="${QUERY_STRING}&cbQpC=1&FX_username=VMPZcklP4gurLgw5zPEcHjfUQa4%3D&FX_password=easy&FX_loginTemplate=5da450a5ba69df00072ddd76&FX_loginType=Easy+Login&FX_remoteAddr=&FX_hotspotDeviceId=5e6bfafc7799f2000a99accf&FX_lang="
+# Download HTML to extract hidden fields
+HTML_CONTENT=$(curl -L -c "$COOKIE_FILE" -b "$COOKIE_FILE" -s "$LANDING_URL")
+FX_username=$(echo "$HTML_CONTENT" | grep -ioE 'name="FX_username"\s+value="[^"]*"' | sed -E 's/.*value="([^"]+)".*/\1/' | head -n 1)
+FX_loginTemplate=$(echo "$HTML_CONTENT" | grep -ioE 'name="FX_loginTemplate"\s+value="[^"]*"' | sed -E 's/.*value="([^"]+)".*/\1/' | head -n 1)
+FX_hotspotDeviceId=$(echo "$HTML_CONTENT" | grep -ioE 'name="FX_hotspotDeviceId"\s+value="[^"]*"' | sed -E 's/.*value="([^"]+)".*/\1/' | head -n 1)
 
-curl -L -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST -d "$POST_DATA" -s -o /dev/null "$LANDING_URL"
+# If grep fails, fall back to empty to prevent script crash
+FX_username=${FX_username:-""}
+FX_loginTemplate=${FX_loginTemplate:-""}
+FX_hotspotDeviceId=${FX_hotspotDeviceId:-""}
+
+curl -L -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST \
+  -d "$QUERY_STRING" \
+  -d "cbQpC=1" \
+  --data-urlencode "FX_username=$FX_username" \
+  -d "FX_password=easy" \
+  --data-urlencode "FX_loginTemplate=$FX_loginTemplate" \
+  --data-urlencode "FX_loginType=Easy Login" \
+  -d "FX_remoteAddr=" \
+  --data-urlencode "FX_hotspotDeviceId=$FX_hotspotDeviceId" \
+  -d "FX_lang=" \
+  -s -o /dev/null "$LANDING_URL"
 
 rm "$COOKIE_FILE"
 

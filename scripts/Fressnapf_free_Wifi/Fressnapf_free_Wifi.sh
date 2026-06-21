@@ -1,45 +1,31 @@
 #!/bin/sh
 
-COOKIE_JAR=$(mktemp)
+COOKIE_FILE=$(mktemp)
+PORTAL_CHECK_URL="http://detectportal.firefox.com/"
 
-INITIAL_URL="http://detectportal.firefox.com/"
+# Get the initial redirect URL to find the portal base URL and path
+LANDING_URL=$(curl -L -c "$COOKIE_FILE" -s -o /dev/null -w "%{url_effective}" "$PORTAL_CHECK_URL")
 
-# Step 1: Get the initial redirect URL with dst parameter and store cookies
-FIRST_REDIRECT_URL_HEADERS=$(curl -s -D - "$INITIAL_URL" -o /dev/null -c "$COOKIE_JAR")
-FIRST_REDIRECT_LOCATION=$(echo "$FIRST_REDIRECT_URL_HEADERS" | grep -i "Location:" | head -n 1 | awk '{print $2}' | tr -d '\r\n')
-DST_QUERY_STRING=$(echo "$FIRST_REDIRECT_LOCATION" | grep -o 'dst=[^&]*')
+# Extract the base domain for the API (e.g. https://wifiaccess.co)
+PORTAL_URL_BASE=$(echo "$LANDING_URL" | awk -F/ '{print $1"//"$3}')
+API_ENDPOINT="${PORTAL_URL_BASE}/portal_api.php"
 
-# Step 2: Get the final landing page URL and update cookies
-LANDING_URL_HEADERS=$(curl -sL -D - "$INITIAL_URL" -o /dev/null -c "$COOKIE_JAR" -b "$COOKIE_JAR")
-LANDING_URL=$(echo "$LANDING_URL_HEADERS" | grep -i "Location:" | awk '{print $2}' | tail -n 1 | tr -d '\r\n')
+# Extract CNA_ID if present
+CNA_ID=$(echo "$LANDING_URL" | grep -o 'cna_id=[^&]*' | cut -d= -f2)
+CNA_ID_JSON=""
+if [ -n "$CNA_ID" ]; then
+    CNA_ID_JSON=",\"cna_id\":\"$CNA_ID\""
+fi
 
-BASE_DOMAIN=$(echo "$LANDING_URL" | cut -d'/' -f3)
-PORTAL_PATH=$(echo "$LANDING_URL" | cut -d'/' -f4- | cut -d'?' -f1)
+# Step 1: Init
+INIT_PAYLOAD="{\"action\":\"init\",\"free_urls\":[]${CNA_ID_JSON}}"
+curl -s -b "$COOKIE_FILE" -c "$COOKIE_FILE" -H "Content-Type: application/json" -d "$INIT_PAYLOAD" -o /dev/null "$API_ENDPOINT"
 
-# Step 3: Construct the login endpoint and POST data
-# Assuming the login POST is to the base portal URL itself.
-LOGIN_ENDPOINT="https://${BASE_DOMAIN}/${PORTAL_PATH}"
+# Step 2: Authenticate (Accept Terms)
+AUTH_PAYLOAD="{\"action\":\"authenticate\",\"login\":\"\",\"password\":\"\",\"from_ajax\":true,\"policy_accept\":true,\"private_policy_accept\":true${CNA_ID_JSON}}"
+curl -s -b "$COOKIE_FILE" -c "$COOKIE_FILE" -H "Content-Type: application/json" -d "$AUTH_PAYLOAD" -o /dev/null "$API_ENDPOINT"
 
-# Common Ucopia login for free WiFi often involves empty credentials and accepting terms.
-# 'logonForm_connect_button=Connect' is the submit button value.
-# 'private_policy_accept=on' is a common guess for a mandatory policy checkbox.
-POST_DATA="login=&password=&${DST_QUERY_STRING}&logonForm_connect_button=Connect&private_policy_accept=on"
+rm "$COOKIE_FILE"
 
-# Step 4: Perform the POST request to log in
-curl -sL -X POST \
-    -b "$COOKIE_JAR" \
-    -c "$COOKIE_JAR" \
-    -d "$POST_DATA" \
-    "$LOGIN_ENDPOINT" -o /dev/null
-
-check_quota() {
-    # Ucopia portals often expose API endpoints for status/usage, e.g., /portal/api/status
-    QUOTA_URL="https://${BASE_DOMAIN}/${PORTAL_PATH}api/status"
-    curl -s -b "$COOKIE_JAR" "$QUOTA_URL"
-}
-
-# Step 5: Clean up cookie jar
-rm -f "$COOKIE_JAR"
-
-# Step 6: Connectivity check
+sleep 2
 ping -c 3 8.8.8.8 >/dev/null && exit 0 || exit 1
