@@ -1,32 +1,44 @@
 #!/bin/sh
 
-COOKIE_JAR=$(mktemp)
-HTML_CONTENT=$(mktemp)
+COOKIE_FILE=$(mktemp)
 
-INITIAL_PORTAL_URL="$1"
+# Step 1: Follow redirects from the initial URL to reach the portal home page
+# and save cookies. Also capture the effective URL and HTML content.
+INITIAL_URL="http://detectportal.firefox.com/"
 
-EFFECTIVE_URL=$(curl -L -k -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o "$HTML_CONTENT" -w '%{url_effective}' "$INITIAL_PORTAL_URL" 2>/dev/null)
+# Curl will follow redirects and handle HSTS for service.thecloud.eu automatically.
+# The output format is: HTML_BODY\nEFFECTIVE_URL
+HOME_PAGE_INFO=$(curl -s -L -c "$COOKIE_FILE" -b "$COOKIE_FILE" -w "%\n{url_effective}" "$INITIAL_URL")
 
-if [ $? -ne 0 ] || [ -z "$EFFECTIVE_URL" ] || [ ! -s "$HTML_CONTENT" ]; then
-    rm "$COOKIE_JAR" "$HTML_CONTENT"
-    exit 1
+HOME_PAGE_URL=$(echo "$HOME_PAGE_INFO" | tail -n 1)
+HOME_PAGE_HTML=$(echo "$HOME_PAGE_INFO" | head -n -1)
+
+# Check if the home page URL was successfully obtained
+if [ -z "$HOME_PAGE_URL" ]; then
+  echo "Failed to get portal home page URL." >&2
+  rm "$COOKIE_FILE"
+  exit 1
 fi
 
-GET_ONLINE_FULL_URL_RAW=$(grep -oP "<a[^>]*href='(?:http|https)://[^']*/service-platform/url/20347'" "$HTML_CONTENT" | head -n 1 | sed -n "s/.*href='\([^']*\)'.*/\1/p")
+# Extract the 'Get Online' link from the HTML. 
+# It looks like <a class="actionable" href='http://service.thecloud.eu/service-platform/url/20347'>...<span>Get Online</span>...</a>
+GET_ONLINE_LINK=$(echo "$HOME_PAGE_HTML" | grep -oP "<a[^>]*href='([^']*)'.*?>.*?<span>Get Online</span>.*?</a>" | head -n 1 | grep -oP "href='([^']*)'" | cut -d"'" -f2)
 
-if [ -z "$GET_ONLINE_FULL_URL_RAW" ]; then
-    rm "$COOKIE_JAR" "$HTML_CONTENT"
-    exit 1
+# Ensure the extracted link is absolute and uses HTTPS if the final portal page was HTTPS (due to HSTS)
+# This specific portal already used HSTS to redirect to HTTPS, so we'll enforce it for the login link too.
+if echo "$GET_ONLINE_LINK" | grep -q "^http://"; then
+  GET_ONLINE_LINK=$(echo "$GET_ONLINE_LINK" | sed 's/^http:/https:/')
 fi
 
-LOGIN_PROTOCOL=$(echo "$EFFECTIVE_URL" | grep -oP 'https?://' | head -n 1)
-LOGIN_HOST=$(echo "$GET_ONLINE_FULL_URL_RAW" | grep -oP '(?<=https?://)[^/]+' | head -n 1)
-LOGIN_PATH=$(echo "$GET_ONLINE_FULL_URL_RAW" | grep -oP '(?<=https?://[^/]+).*' | head -n 1)
+if [ -z "$GET_ONLINE_LINK" ]; then
+  echo "Failed to find 'Get Online' link on the portal page." >&2
+  rm "$COOKIE_FILE"
+  exit 1
+fi
 
-LOGIN_URL="${LOGIN_PROTOCOL}${LOGIN_HOST}${LOGIN_PATH}"
+# Step 2: Access the 'Get Online' link to activate the internet connection
+curl -s -L -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$GET_ONLINE_LINK" >/dev/null
 
-curl -L -k -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o /dev/null "$LOGIN_URL"
-
-rm "$COOKIE_JAR" "$HTML_CONTENT"
-
+# Step 3: Clean up the cookie file and perform a connectivity check
+rm "$COOKIE_FILE"
 ping -c 3 8.8.8.8 >/dev/null && exit 0 || exit 1
