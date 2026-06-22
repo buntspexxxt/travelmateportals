@@ -1,27 +1,32 @@
 #!/bin/sh
 
 COOKIE_JAR=$(mktemp)
-INITIAL_PROBE_URL="http://detectportal.firefox.com/"
+HTML_CONTENT=$(mktemp)
 
-# Perform the initial probe and capture the final effective URL after all redirects
-# This also stores any initial cookies in COOKIE_JAR
-FINAL_EFFECTIVE_URL=$(curl -sL -c "$COOKIE_JAR" -w '%{url_effective}\n' -o /dev/null "$INITIAL_PROBE_URL")
+INITIAL_PORTAL_URL="$1"
 
-# Extract scheme (e.g., https://) and base domain (e.g., service.thecloud.eu) from the effective URL
-SCHEME=$(echo "$FINAL_EFFECTIVE_URL" | grep -oP '^\w+://')
-BASE_DOMAIN=$(echo "$FINAL_EFFECTIVE_URL" | grep -oP '(?<=//)[^/]+')
+EFFECTIVE_URL=$(curl -L -k -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o "$HTML_CONTENT" -w '%{url_effective}' "$INITIAL_PORTAL_URL" 2>/dev/null)
 
-# The HTML analysis shows a "Get Online" link pointing to /service-platform/url/20347.
-# Construct this activation URL using the dynamically extracted scheme and base domain.
-ACTIVATION_PATH="/service-platform/url/20347"
-ACTIVATION_URL="${SCHEME}${BASE_DOMAIN}${ACTIVATION_PATH}"
+if [ $? -ne 0 ] || [ -z "$EFFECTIVE_URL" ] || [ ! -s "$HTML_CONTENT" ]; then
+    rm "$COOKIE_JAR" "$HTML_CONTENT"
+    exit 1
+fi
 
-# Access the "Get Online" URL to trigger the connection/activation,
-# ensuring cookies are sent and updated.
-curl -sL -b "$COOKIE_JAR" -c "$COOKIE_JAR" "$ACTIVATION_URL" -o /dev/null
+GET_ONLINE_FULL_URL_RAW=$(grep -oP "<a[^>]*href='(?:http|https)://[^']*/service-platform/url/20347'" "$HTML_CONTENT" | head -n 1 | sed -n "s/.*href='\([^']*\)'.*/\1/p")
 
-# Clean up the temporary cookie file
-rm -f "$COOKIE_JAR"
+if [ -z "$GET_ONLINE_FULL_URL_RAW" ]; then
+    rm "$COOKIE_JAR" "$HTML_CONTENT"
+    exit 1
+fi
 
-# Check for internet connectivity
+LOGIN_PROTOCOL=$(echo "$EFFECTIVE_URL" | grep -oP 'https?://' | head -n 1)
+LOGIN_HOST=$(echo "$GET_ONLINE_FULL_URL_RAW" | grep -oP '(?<=https?://)[^/]+' | head -n 1)
+LOGIN_PATH=$(echo "$GET_ONLINE_FULL_URL_RAW" | grep -oP '(?<=https?://[^/]+).*' | head -n 1)
+
+LOGIN_URL="${LOGIN_PROTOCOL}${LOGIN_HOST}${LOGIN_PATH}"
+
+curl -L -k -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o /dev/null "$LOGIN_URL"
+
+rm "$COOKIE_JAR" "$HTML_CONTENT"
+
 ping -c 3 8.8.8.8 >/dev/null && exit 0 || exit 1
