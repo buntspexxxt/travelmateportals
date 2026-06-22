@@ -1,36 +1,27 @@
 #!/bin/sh
-# Fallback Script for Rossmann_Kunden_WLAN_portal_eu_mist_com
-# ERROR: Captured HTML was empty (0 bytes). Portal blocked or dropped the connection.
 
-# --- WGET DEBUG LOG ---
-# === Trying http://detectportal.firefox.com/ ===
-# Cannot open cookies file '/tmp/portal_tmp_1782124751/cookies.txt': No such file or directory
-# --2026-06-22 12:39:11--  http://detectportal.firefox.com/
-# Resolving detectportal.firefox.com... 34.107.221.82
-# Connecting to detectportal.firefox.com|34.107.221.82|:80... failed: Operation timed out.
-# Retrying.
-# 
-# --2026-06-22 12:39:27--  (try: 2)  http://detectportal.firefox.com/
-# Connecting to detectportal.firefox.com|34.107.221.82|:80... failed: Network unreachable.
-# Converted links in 0 files in 0 seconds.
-# === Trying http://neverssl.com/ ===
-# --2026-06-22 12:39:27--  http://neverssl.com/
-# Resolving neverssl.com... failed: Try again.
-# wget: unable to resolve host address 'neverssl.com'
-# Converted links in 0 files in 0 seconds.
-# === Trying http://www.msftconnecttest.com/connecttest.txt ===
-# --2026-06-22 12:39:32--  http://www.msftconnecttest.com/connecttest.txt
-# Resolving www.msftconnecttest.com... failed: Try again.
-# wget: unable to resolve host address 'www.msftconnecttest.com'
-# Converted links in 0 files in 0 seconds.
-# === Trying http://connectivitycheck.gstatic.com/generate_204 ===
-# --2026-06-22 12:39:37--  http://connectivitycheck.gstatic.com/generate_204
-# Resolving connectivitycheck.gstatic.com... failed: Try again.
-# wget: unable to resolve host address 'connectivitycheck.gstatic.com'
-# Converted links in 0 files in 0 seconds.
-# === Trying http://172.20.0.3/ ===
-# --2026-06-22 12:39:42--  http://172.20.0.3/
-# Connecting to 172.20.0.3:80... failed: Network unreachable.
-# Converted links in 0 files in 0 seconds.
-# 
-exit 1
+COOKIE_JAR=$(mktemp)
+
+# Step 1: Get the effective landing URL after redirects and download the HTML content
+LANDING_URL=$(curl -s -L -c "$COOKIE_JAR" -b "$COOKIE_JAR" -o /dev/null -w "%{url_effective}" "http://detectportal.firefox.com/")
+HTML_CONTENT=$(curl -s -L -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$LANDING_URL")
+
+# Step 2: Extract dynamic hidden input values from the HTML content of the 'singleAuthForm'
+AP_MAC=$(echo "$HTML_CONTENT" | grep -oP 'form[^>]*id="singleAuthForm"[^>]*>.*?input type="hidden" name="ap_mac" value="\K[^"]+' | head -n 1)
+CLIENT_MAC=$(echo "$HTML_CONTENT" | grep -oP 'form[^>]*id="singleAuthForm"[^>]*>.*?input type="hidden" name="client_mac" value="\K[^"]+' | head -n 1)
+WLAN_ID=$(echo "$HTML_CONTENT" | grep -oP 'form[^>]*id="singleAuthForm"[^>]*>.*?input type="hidden" name="wlan_id" value="\K[^"]+' | head -n 1)
+REDIRECT_URL=$(echo "$HTML_CONTENT" | grep -oP 'form[^>]*id="singleAuthForm"[^>]*>.*?input type="hidden" name="url" value="\K[^"]+' | head -n 1)
+
+# Step 3: Construct the POST data payload
+# The 'singleAuthForm' is the initially visible form. It requires accepting 'tos' and submits with 'auth_method=passphrase'.
+# The hidden fields ap_mac, client_mac, wlan_id, and url are also included in the POST body as per the form structure.
+POST_DATA="ap_mac=$AP_MAC&client_mac=$CLIENT_MAC&wlan_id=$WLAN_ID&url=$REDIRECT_URL&tos=true&auth_method=passphrase"
+
+# Step 4: Submit the login request to the LANDING_URL (which is the form's action URL)
+curl -s -L -c "$COOKIE_JAR" -b "$COOKIE_JAR" -X POST -d "$POST_DATA" "$LANDING_URL" -o /dev/null
+
+# Step 5: Clean up cookie file
+rm -f "$COOKIE_JAR"
+
+# Step 6: Perform a connectivity check
+ping -c 3 8.8.8.8 >/dev/null && exit 0 || exit 1
