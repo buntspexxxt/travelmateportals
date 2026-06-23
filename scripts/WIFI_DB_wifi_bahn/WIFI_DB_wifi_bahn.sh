@@ -4,60 +4,60 @@
 
 # --- WGET DEBUG LOG ---
 # === Trying http://detectportal.firefox.com/ ===
-# Cannot open cookies file '/tmp/portal_tmp_1782207721/cookies.txt': No such file or directory
-# --2026-06-23 11:42:01--  http://detectportal.firefox.com/
+# Cannot open cookies file '/tmp/portal_tmp_1782210181/cookies.txt': No such file or directory
+# --2026-06-23 12:23:01--  http://detectportal.firefox.com/
 # Resolving detectportal.firefox.com... 34.107.221.82
 # Connecting to detectportal.firefox.com|34.107.221.82|:80... connected.
 # HTTP request sent, awaiting response... 302 Found
 # Location: https://wifi.bahn.de/ [following]
-# --2026-06-23 11:42:01--  https://wifi.bahn.de/
+# --2026-06-23 12:23:01--  https://wifi.bahn.de/
 # Resolving wifi.bahn.de... 185.109.152.241
 # Connecting to wifi.bahn.de|185.109.152.241|:443... connected.
 # OpenSSL: error:0A000152:SSL routines::unsafe legacy renegotiation disabled
 # Unable to establish SSL connection.
 # Converted links in 0 files in 0 seconds.
 # === Trying http://neverssl.com/ ===
-# --2026-06-23 11:42:01--  http://neverssl.com/
+# --2026-06-23 12:23:01--  http://neverssl.com/
 # Resolving neverssl.com... 34.223.124.45
 # Connecting to neverssl.com|34.223.124.45|:80... connected.
 # HTTP request sent, awaiting response... 302 Found
 # Location: https://wifi.bahn.de/ [following]
-# --2026-06-23 11:42:08--  https://wifi.bahn.de/
+# --2026-06-23 12:23:05--  https://wifi.bahn.de/
 # Resolving wifi.bahn.de... 185.109.152.241
 # Connecting to wifi.bahn.de|185.109.152.241|:443... connected.
 # OpenSSL: error:0A000152:SSL routines::unsafe legacy renegotiation disabled
 # Unable to establish SSL connection.
 # Converted links in 0 files in 0 seconds.
 # === Trying http://www.msftconnecttest.com/connecttest.txt ===
-# --2026-06-23 11:42:08--  http://www.msftconnecttest.com/connecttest.txt
-# Resolving www.msftconnecttest.com... 184.86.251.136, 184.86.251.150
-# Connecting to www.msftconnecttest.com|184.86.251.136|:80... connected.
+# --2026-06-23 12:23:05--  http://www.msftconnecttest.com/connecttest.txt
+# Resolving www.msftconnecttest.com... 23.55.110.79, 23.55.110.72
+# Connecting to www.msftconnecttest.com|23.55.110.79|:80... connected.
 # HTTP request sent, awaiting response... 302 Found
 # Location: https://wifi.bahn.de/ [following]
-# --2026-06-23 11:42:08--  https://wifi.bahn.de/
+# --2026-06-23 12:23:05--  https://wifi.bahn.de/
 # Resolving wifi.bahn.de... 185.109.152.241
 # Connecting to wifi.bahn.de|185.109.152.241|:443... connected.
 # OpenSSL: error:0A000152:SSL routines::unsafe legacy renegotiation disabled
 # Unable to establish SSL connection.
 # Converted links in 0 files in 0 seconds.
 # === Trying http://connectivitycheck.gstatic.com/generate_204 ===
-# --2026-06-23 11:42:09--  http://connectivitycheck.gstatic.com/generate_204
-# Resolving connectivitycheck.gstatic.com... 192.178.183.94
-# Connecting to connectivitycheck.gstatic.com|192.178.183.94|:80... connected.
+# --2026-06-23 12:23:06--  http://connectivitycheck.gstatic.com/generate_204
+# Resolving connectivitycheck.gstatic.com... 142.251.20.94
+# Connecting to connectivitycheck.gstatic.com|142.251.20.94|:80... connected.
 # HTTP request sent, awaiting response... 302 Found
 # Location: https://wifi.bahn.de/ [following]
-# --2026-06-23 11:42:09--  https://wifi.bahn.de/
+# --2026-06-23 12:23:06--  https://wifi.bahn.de/
 # Resolving wifi.bahn.de... 185.109.152.241
 # Connecting to wifi.bahn.de|185.109.152.241|:443... connected.
 # OpenSSL: error:0A000152:SSL routines::unsafe legacy renegotiation disabled
 # Unable to establish SSL connection.
 # Converted links in 0 files in 0 seconds.
 # === Trying http://100.72.0.1/ ===
-# --2026-06-23 11:42:09--  http://100.72.0.1/
+# --2026-06-23 12:23:06--  http://100.72.0.1/
 # Connecting to 100.72.0.1:80... failed: Operation timed out.
 # Retrying.
 # 
-# --2026-06-23 11:42:55--  (try: 2)  http://100.72.0.1/
+# --2026-06-23 12:23:52--  (try: 2)  http://100.72.0.1/
 # Connecting to 100.72.0.1:80... failed: Operation timed out.
 # Giving up.
 # 
