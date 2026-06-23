@@ -1,4 +1,3 @@
-#!/bin/bash
-# ALDI SÜD gratis WLAN Captive Portal Login Script
-
-# --- Configuration ---
+#!/bin/sh
+# Fallback Script for ALDI_S__D_gratis_WLAN_eu_network_auth_com
+exit 1
