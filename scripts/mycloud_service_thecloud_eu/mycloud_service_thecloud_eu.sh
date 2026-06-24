@@ -1,54 +1,59 @@
-#!/usr/bin/env bash
-set -e
+#!/bin/bash
 
-echo "=== Starting Captive Portal Login for 'mycloud_service_thecloud_eu' ==="
-
+# Configuration
 COOKIE_JAR="/tmp/cookies.txt"
-LANDING_FILE="/tmp/landing.html"
-RESULT_FILE="/tmp/result.html"
+PORTAL_HTML_FILE="/tmp/portal.html"
 
-echo "Step 1: Attempting to connect to http://1.1.1.1/ to trigger captive portal redirect..."
-EFFECTIVE_URL=$(curl -v -L -c "$COOKIE_JAR" -b "$COOKIE_JAR" -w "%{url_effective}" -o "$LANDING_FILE" "http://1.1.1.1/")
+# Ensure clean state
+rm -f "$COOKIE_JAR" "$PORTAL_HTML_FILE"
 
-echo "Effective Landing URL: $EFFECTIVE_URL"
-echo "Saved cookies to $COOKIE_JAR"
+echo "=================================================="
+echo "STEP 1: Triggering initial redirect from http://1.1.1.1/"
+echo "=================================================="
+PORTAL_URL=$(curl -v -o "$PORTAL_HTML_FILE" -L -c "$COOKIE_JAR" -b "$COOKIE_JAR" -w "%{url_effective}" "http://1.1.1.1/")
 
-echo "Step 2: Parsing Base URL and 'Get Online' link from the landing page..."
-BASE_URL=$(echo "$EFFECTIVE_URL" | grep -oE "https?://[^/]+")
-echo "Extracted Base URL: $BASE_URL"
+echo "Effective Portal URL: $PORTAL_URL"
 
-# Extracting the Get Online href dynamically from the landing HTML
-GET_ONLINE_PATH=$(grep -B 5 -i "Get Online" "$LANDING_FILE" | grep -oE "href=['\"][^'\"]+['\"]" | head -n 1 | sed -E "s/href=['\"]([^'\"]+)['\"]/\1/")
-
-if [ -z "$GET_ONLINE_PATH" ]; then
-    echo "ERROR: Could not find 'Get Online' link on the landing page!"
-    echo "Page content preview:"
-    head -n 50 "$LANDING_FILE"
+if [ ! -f "$PORTAL_HTML_FILE" ]; then
+    echo "ERROR: Failed to retrieve Portal HTML!"
     exit 1
 fi
 
-echo "Extracted Path: $GET_ONLINE_PATH"
+echo "=================================================="
+echo "STEP 2: Extracting 'Get Online' Link dynamically"
+echo "=================================================="
+GET_ONLINE_URL=$(grep -oE "href=['\"][^'\"]*/service-platform/url/[0-9]+" "$PORTAL_HTML_FILE" | head -n 1 | sed -E "s/href=['\"]//")
 
-# Build absolute URL
-if [[ "$GET_ONLINE_PATH" != http* ]]; then
-    if [[ "$GET_ONLINE_PATH" != /* ]]; then
-        GET_ONLINE_PATH="/$GET_ONLINE_PATH"
-    fi
-    GET_ONLINE_URL="${BASE_URL}${GET_ONLINE_PATH}"
-else
-    GET_ONLINE_URL="$GET_ONLINE_PATH"
+echo "Extracted 'Get Online' URL path: $GET_ONLINE_URL"
+
+if [ -z "$GET_ONLINE_URL" ]; then
+    echo "ERROR: Could not find 'Get Online' activation URL in the HTML page!"
+    exit 1
 fi
 
-echo "Constructed Activation URL: $GET_ONLINE_URL"
+# Handle relative URLs if any
+if [[ ! "$GET_ONLINE_URL" =~ ^https?:// ]]; then
+    echo "URL is relative. Resolving base host from the portal landing page URL..."
+    BASE_URL=$(echo "$PORTAL_URL" | grep -oE '^https?://[^/]+')
+    GET_ONLINE_URL="${BASE_URL}${GET_ONLINE_URL}"
+    echo "Resolved absolute URL: $GET_ONLINE_URL"
+fi
 
-echo "Step 3: Triggering Activation/Get Online request..."
-curl -v -L -c "$COOKIE_JAR" -b "$COOKIE_JAR" -o "$RESULT_FILE" "$GET_ONLINE_URL"
+echo "=================================================="
+echo "STEP 3: Sending request to 'Get Online' URL"
+echo "=================================================="
+RESPONSE=$(curl -v -L -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$GET_ONLINE_URL")
 
-echo "Activation request completed. Checking final connectivity..."
-if ping -c 3 8.8.8.8 >/dev/null 2>&1; then
-    echo "SUCCESS: Internet is connected!"
+echo "Response Output:"
+echo "$RESPONSE"
+
+echo "=================================================="
+echo "STEP 4: Performing Connectivity Check"
+echo "=================================================="
+if ping -c 3 8.8.8.8 >/dev/null; then
+    echo "SUCCESS: Internet connection is now active!"
     exit 0
 else
-    echo "FAILED: Still no internet access."
+    echo "FAILED: No active internet connection found."
     exit 1
 fi
