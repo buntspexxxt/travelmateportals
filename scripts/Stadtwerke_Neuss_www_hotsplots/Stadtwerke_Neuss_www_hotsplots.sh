@@ -19,7 +19,7 @@ echo "[3/6] Extracting hidden input values and forms dynamically..."
 
 extract_value() {
     local name="$1"
-    grep -o -i -E '<input [^>]*>' "$HTML_FILE" | grep -i "name=\"$name\"" | sed -E 's/.*value="([^"]*)".*/\1/' | head -n 1
+    grep -o -i -E '<input [^>]*>' "$HTML_FILE" | grep -i "name="$name"" | sed -E 's/.*value="([^"]*)".*/\1/' | head -n 1
 }
 
 HAVETERMS=$(extract_value "haveTerms")

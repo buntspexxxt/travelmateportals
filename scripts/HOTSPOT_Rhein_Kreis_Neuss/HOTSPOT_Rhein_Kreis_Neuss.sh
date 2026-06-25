@@ -20,7 +20,7 @@ echo "Cleanup complete."
 
 # 1. Simulate initial probe request to get the captive portal redirect URL
 log_step "1. Performing initial probe request to '$INITIAL_PROBE_URL' to capture the captive portal redirect URL."
-echo "Curl command: curl -v -A \"$USER_AGENT\" --max-redirs 0 \"$INITIAL_PROBE_URL\""
+echo "Curl command: curl -v -A "$USER_AGENT" --max-redirs 0 "$INITIAL_PROBE_URL""
 INITIAL_RESPONSE=$(curl -v -A "$USER_AGENT" --max-redirs 0 "$INITIAL_PROBE_URL" 2>&1)
 CURL_STATUS=$?
 echo "Curl exit status: $CURL_STATUS"
@@ -56,7 +56,7 @@ echo "Extracted BASE_PATH_PREFIX: $BASE_PATH_PREFIX"
 # 3. Perform a HEAD request to the LANDING_URL to get the 'Continue-Url' header, saving cookies
 # The JavaScript makes a HEAD request to window.location to dynamically get the 'Continue-Url'.
 log_step "3. Performing a HEAD request to '$LANDING_URL' to extract the 'Continue-Url' header."
-echo "Curl command: curl -v -I -A \"$USER_AGENT\" -c \"$COOKIE_FILE\" -b \"$COOKIE_FILE\" \"$LANDING_URL\""
+echo "Curl command: curl -v -I -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$LANDING_URL""
 HEAD_RESPONSE=$(curl -v -I -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$LANDING_URL" 2>&1)
 CURL_STATUS=$?
 echo "Curl exit status: $CURL_STATUS"
@@ -86,7 +86,7 @@ echo "Constructed FINAL_GRANT_URL: $FINAL_GRANT_URL"
 # 5. Make the GET request to the final grant URL to complete the login, using cookies
 # Use -L to follow redirects after successful authentication.
 log_step "5. Making GET request to the FINAL_GRANT_URL to complete the login."
-echo "Curl command: curl -v -L -A \"$USER_AGENT\" -b \"$COOKIE_FILE\" -c \"$COOKIE_FILE\" \"$FINAL_GRANT_URL\""
+echo "Curl command: curl -v -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$FINAL_GRANT_URL""
 GRANT_RESPONSE=$(curl -v -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$FINAL_GRANT_URL" 2>&1)
 CURL_STATUS=$?
 echo "Curl exit status: $CURL_STATUS"

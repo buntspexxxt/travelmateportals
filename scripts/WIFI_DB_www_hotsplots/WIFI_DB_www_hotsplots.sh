@@ -11,7 +11,7 @@ RESPONSE_HTML=$(curl -v -c "$COOKIE_FILE" -b "$COOKIE_FILE" -A "$USER_AGENT" "ht
 
 # 2. Extract hidden form fields dynamically
 EXTRACT_VAL() {
-  echo "$RESPONSE_HTML" | grep -o "name=\"$1\" value=\"[^"]*\"" | cut -d'"' -f4
+  echo "$RESPONSE_HTML" | grep -o "name="$1" value="[^"]*"" | cut -d'"' -f4
 }
 
 CHALLENGE=$(EXTRACT_VAL "challenge")

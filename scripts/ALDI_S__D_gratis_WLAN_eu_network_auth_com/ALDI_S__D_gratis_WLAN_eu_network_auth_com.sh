@@ -24,7 +24,8 @@ if [ "$CURL_STATUS" -ne 0 ]; then
     exit 1
 fi
 
-LANDING_URL=$(grep -i '^Location:' "$HEADERS_INITIAL" | tail -n 1 | sed 's/^Location: //i' | tr -d '\r\n')
+LANDING_URL=$(grep -i '^Location:' "$HEADERS_INITIAL" | tail -n 1 | sed 's/^Location: //i' | tr -d '\r
+')
 
 if [ -z "$LANDING_URL" ]; then
     echo "ERROR: Could not extract LANDING_URL from initial redirect headers."
@@ -76,7 +77,8 @@ if [ "$CURL_STATUS" -ne 0 ]; then
 fi
 echo "HEAD request to landing page successful. Headers saved to $HEADERS_LANDING_HEAD."
 
-FINAL_CONTINUE_URL=$(grep -i '^Continue-Url:' "$HEADERS_LANDING_HEAD" | tail -n 1 | sed 's/^Continue-Url: //i' | tr -d '\r\n')
+FINAL_CONTINUE_URL=$(grep -i '^Continue-Url:' "$HEADERS_LANDING_HEAD" | tail -n 1 | sed 's/^Continue-Url: //i' | tr -d '\r
+')
 
 if [ -z "$FINAL_CONTINUE_URL" ]; then
     echo "WARNING: 'Continue-Url' header not found in HEAD response. This might cause the login to fail."
