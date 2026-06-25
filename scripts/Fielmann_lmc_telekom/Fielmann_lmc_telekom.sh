@@ -28,7 +28,7 @@ HTML_CONTENT=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt "$EFFECTIVE_URL")
 # Assuming this is an open Wi-Fi, we try submitting an empty string or ' ' if the server requires it.
 echo "Submitting acceptance form..." | tee -a "$LOG_FILE"
 SUBMIT_RESPONSE=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt -c /tmp/cookies.txt -X POST "$EFFECTIVE_URL" \
-    -d "authenticationCode=" \
+    -d "authenticationCode=Nulltarif" \
     -d "accept=true")
 
 echo "HTTP Submission Response: $SUBMIT_RESPONSE" | tee -a "$LOG_FILE"
