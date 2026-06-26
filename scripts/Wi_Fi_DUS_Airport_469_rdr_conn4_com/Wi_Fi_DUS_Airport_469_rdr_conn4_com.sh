@@ -1,6 +1,9 @@
 #!/bin/bash
 
 LOG_FILE="/tmp/portal_login.log"
+COOKIE_FILE="/tmp/portal_cookies.txt"
+USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
 echo "Starting portal login script..." | tee -a "$LOG_FILE"
 
 echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
@@ -13,28 +16,28 @@ for i in {1..20}; do
     sleep 1
 done
 
-USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-COOKIE_FILE="/tmp/portal_cookies.txt"
+# Step 1: Initialize session and get the token page
 BASE_URL="https://469.rdr.conn4.com"
+echo "Fetching portal index..." | tee -a "$LOG_FILE"
+curl -v -A "$USER_AGENT" -c "$COOKIE_FILE" -o /tmp/portal.html "$BASE_URL/" 2>&1 | tee -a "$LOG_FILE"
 
-echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -v -A "$USER_AGENT" -c "$COOKIE_FILE" "$BASE_URL/" 2>&1)
-echo "HTTP Response Received." | tee -a "$LOG_FILE"
-
-echo "Extracting WBS Token from HTML..." | tee -a "$LOG_FILE"
-# Extracting the JSON token object from the script block in the HTML
-WBS_TOKEN=$(grep -o 'conn4.hotspot.wbsToken = {[^{]*"token":"[^"]*"' /tmp/portal_tmp_1782465966/portal/index.html | sed 's/.*"token":"//' | sed 's/".*//')
-
+# Step 2: Extract Token
+WBS_TOKEN=$(grep -o '"token":"[^"]*"' /tmp/portal.html | head -1 | sed 's/"token":"//' | sed 's/"//')
 if [ -z "$WBS_TOKEN" ]; then
-    echo "Failed to extract WBS Token. Check logs." | tee -a "$LOG_FILE"
+    echo "Error: Could not find WBS Token." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Submitting token to portal..." | tee -a "$LOG_FILE"
-# The portal logic indicates this is a token-based handshake. POSTing to verify/login.
-POST_DATA="token=$WBS_TOKEN"
-RESULT=$(curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" "$BASE_URL/wbs/de/roaming/return/" 2>&1)
-echo "Final request result: $RESULT" | tee -a "$LOG_FILE"
+# Step 3: POST token to initialize sequence
+echo "Posting WBS Token..." | tee -a "$LOG_FILE"
+curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "token=$WBS_TOKEN" "$BASE_URL/wbs/de/roaming/return/" 2>&1 | tee -a "$LOG_FILE"
 
+# Step 4: Handle the scene selection (Free vs Paid)
+# Based on the requirement to select the 'free' option
+# Typically portals with 'scenes' use an API to trigger the free plan
+echo "Requesting free internet access..." | tee -a "$LOG_FILE"
+curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$BASE_URL/api/v1/scene/trigger" -d "action=free" 2>&1 | tee -a "$LOG_FILE"
+
+# Connectivity check
 echo "Performing connectivity check..." | tee -a "$LOG_FILE"
 ping -c 3 8.8.8.8 >/dev/null && echo "Connectivity confirmed!" | tee -a "$LOG_FILE" && exit 0 || exit 1
