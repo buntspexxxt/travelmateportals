@@ -13,26 +13,23 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Initializing session..." | tee -a "$LOG_FILE"
-# Fetch main page to establish session and get API host
-RESPONSE=$(curl -A "$USER_AGENT" -c "$COOKIE_FILE" -v "https://wifiaccess.co/103/portal/" 2>&1)
-echo "HTTP Response Received." | tee -a "$LOG_FILE"
+echo "Initiating connection and determining portal path..." | tee -a "$LOG_FILE"
+# Dynamically extract base URL
+REDIRECT_URL=$(curl -A "$USER_AGENT" -c "$COOKIE_FILE" -v -L "http://connectivitycheck.gstatic.com/generate_204" 2>&1 | grep "Location:" | tail -n 1 | awk '{print $2}' | tr -d '\r')
+BASE_URL=$(echo "$REDIRECT_URL" | cut -d'/' -f1-4)
+echo "Detected Base URL: $BASE_URL" | tee -a "$LOG_FILE"
 
-API_URL="https://wifiaccess.co/portal_api.php"
+# Fetch index to initialize session
+curl -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -v "$BASE_URL/" >> "$LOG_FILE" 2>&1
+
+API_URL="$BASE_URL/portal_api.php"
 echo "Calling API Init..." | tee -a "$LOG_FILE"
-
-# Perform initial POST to the API to register the connection
-# The portal requires action=init to receive the configuration payload
-RESULT=$(curl -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -v -d "action=init" "$API_URL" 2>&1)
-echo "API Init complete." | tee -a "$LOG_FILE"
-
-# The portal logic typically requires a 'secure_pwd' (often a generic token or empty) 
-# or policy acceptance. We attempt to send a standard connect action.
-# Captive portals of this type (Ucopia) usually check policy_accept=true
+curl -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -v -d "action=init" "$API_URL" >> "$LOG_FILE" 2>&1
 
 echo "Submitting connection request..." | tee -a "$LOG_FILE"
-RESULT=$(curl -A "$USER_AGENT" -b "$COOKIE_FILE" -v -d "action=authenticate&policy_accept=true&secure_pwd=" "$API_URL" 2>&1)
-echo "Auth Result: $RESULT" | tee -a "$LOG_FILE"
+# Ucopia portals usually require policy_accept=true
+RESPONSE=$(curl -A "$USER_AGENT" -b "$COOKIE_FILE" -v -d "action=authenticate&policy_accept=true&secure_pwd=" "$API_URL" 2>&1)
+echo "Auth Response: $RESPONSE" | tee -a "$LOG_FILE"
 
-echo "Checking connectivity..." | tee -a "$LOG_FILE"
-ping -c 3 8.8.8.8 >/dev/null && echo "Connected!" && exit 0 || exit 1
+echo "Verifying internet access..." | tee -a "$LOG_FILE"
+ping -c 3 8.8.8.8 >/dev/null && echo "Successfully connected!" && exit 0 || echo "Connection failed." && exit 1
