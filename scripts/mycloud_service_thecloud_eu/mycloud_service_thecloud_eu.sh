@@ -14,21 +14,19 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Fetching portal home page to obtain session cookie..." | tee -a "$LOG_FILE"
-curl -v -A "$UA" -c "$COOKIE_FILE" "https://service.thecloud.eu/service-platform/home" > /dev/null 2>&1
+echo "Fetching initial landing page..." | tee -a "$LOG_FILE"
+PAGE_CONTENT=$(curl -v -A "$UA" -c "$COOKIE_FILE" -L "https://service.thecloud.eu/service-platform/home")
 
-echo "Extracting 'Get Online' link from portal page..." | tee -a "$LOG_FILE"
-LOGIN_URL=$(curl -v -A "$UA" -b "$COOKIE_FILE" "https://service.thecloud.eu/service-platform/home" 2>&1 | grep -o 'https://service.thecloud.eu/service-platform/url/[0-9]*' | head -n 1)
+echo "Extracting form action and hidden fields..." | tee -a "$LOG_FILE"
+FORM_ACTION="https://service.thecloud.eu/service-platform/macauthlogin/v5/registration"
 
-if [ -z "$LOGIN_URL" ]; then
-    echo "Error: Could not find login URL."
-    exit 1
-fi
+# The portal requires a POST to the registration endpoint. We simulate the 'Continue' button press.
+# Based on the HTML, there are no specific hidden input fields like CSRF tokens listed in the form tag,
+# but we perform a POST with empty body as this is a 'one-click' portal.
+echo "Submitting registration form..." | tee -a "$LOG_FILE"
+RESPONSE_CODE=$(curl -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -o /dev/null -w "%{http_code}" -X POST "$FORM_ACTION")
 
-echo "Proceeding to login URL: $LOGIN_URL" | tee -a "$LOG_FILE"
-RESPONSE=$(curl -v -A "$UA" -b "$COOKIE_FILE" -L -o /dev/null -w "%{http_code}" "$LOGIN_URL")
-echo "HTTP Response: $RESPONSE" | tee -a "$LOG_FILE"
+echo "HTTP Response from registration: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Checking internet connectivity..." | tee -a "$LOG_FILE"
-ping -c 3 8.8.8.8 > /dev/null && echo "Login successful and internet is reachable." || echo "Login failed or no internet."
-exit 0
+ping -c 3 8.8.8.8 > /dev/null && echo "Login successful and internet is reachable." | tee -a "$LOG_FILE" || { echo "Login failed or no internet." | tee -a "$LOG_FILE"; exit 1; }
