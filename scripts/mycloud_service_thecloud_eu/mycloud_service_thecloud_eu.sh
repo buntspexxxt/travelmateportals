@@ -14,19 +14,24 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Fetching initial landing page..." | tee -a "$LOG_FILE"
-PAGE_CONTENT=$(curl -v -A "$UA" -c "$COOKIE_FILE" -L "https://service.thecloud.eu/service-platform/home")
+echo "Fetching initial landing page to obtain session cookies..." | tee -a "$LOG_FILE"
+curl -v -A "$UA" -c "$COOKIE_FILE" -L "https://service.thecloud.eu/service-platform/home" > /dev/null 2>&1
 
-echo "Extracting form action and hidden fields..." | tee -a "$LOG_FILE"
-FORM_ACTION="https://service.thecloud.eu/service-platform/macauthlogin/v5/registration"
+echo "Extracting the 'Get Online' link from the HTML..." | tee -a "$LOG_FILE"
+GET_ONLINE_URL=$(curl -v -A "$UA" -b "$COOKIE_FILE" -L "https://service.thecloud.eu/service-platform/home" 2>&1 | grep -o 'href="https://service.thecloud.eu/service-platform/url/[0-9]*"' | head -1 | sed 's/href="//' | sed 's/"//')
 
-# The portal requires a POST to the registration endpoint. We simulate the 'Continue' button press.
-# Based on the HTML, there are no specific hidden input fields like CSRF tokens listed in the form tag,
-# but we perform a POST with empty body as this is a 'one-click' portal.
-echo "Submitting registration form..." | tee -a "$LOG_FILE"
-RESPONSE_CODE=$(curl -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -o /dev/null -w "%{http_code}" -X POST "$FORM_ACTION")
+if [ -z "$GET_ONLINE_URL" ]; then
+    echo "Could not find 'Get Online' URL. Searching for existing session..." | tee -a "$LOG_FILE"
+else
+    echo "Found URL: $GET_ONLINE_URL" | tee -a "$LOG_FILE"
+    echo "Navigating to activation URL..." | tee -a "$LOG_FILE"
+    RESPONSE=$(curl -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -o /dev/null -w "%{http_code}" "$GET_ONLINE_URL")
+    echo "HTTP Response from navigation: $RESPONSE" | tee -a "$LOG_FILE"
+fi
 
-echo "HTTP Response from registration: $RESPONSE_CODE" | tee -a "$LOG_FILE"
+echo "Performing final WiFi4EU registration/handshake..." | tee -a "$LOG_FILE"
+# The portal requires the JS tracking link to mark the session as active
+curl -v -A "$UA" -b "$COOKIE_FILE" "https://collection.wifi4eu.ec.europa.eu/wifi4eu.min.js" > /dev/null 2>&1
 
 echo "Checking internet connectivity..." | tee -a "$LOG_FILE"
 ping -c 3 8.8.8.8 > /dev/null && echo "Login successful and internet is reachable." | tee -a "$LOG_FILE" || { echo "Login failed or no internet." | tee -a "$LOG_FILE"; exit 1; }
