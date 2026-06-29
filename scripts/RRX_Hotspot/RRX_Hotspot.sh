@@ -3,6 +3,7 @@
 LOG_FILE="/tmp/portal_log.txt"
 echo "Starting RRX_Hotspot automation script..." | tee -a "$LOG_FILE"
 
+# 1. Wait for network
 echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
     if ip route | grep -q default; then
@@ -13,21 +14,26 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Analyzing the portal content..." | tee -a "$LOG_FILE"
-# The provided HTML is just 'NeverSSL', a utility page used to trigger redirects.
-# It does not contain an actual login form, but instead relies on the browser's 
-# reaction to unencrypted traffic to trigger the hotspot's intercept.
+# 2. Trigger the portal redirect by hitting an unencrypted site
+echo "Attempting to trigger portal redirect via http://neverssl.com" | tee -a "$LOG_FILE"
+REDIRECT_URL=$(curl -v -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" http://neverssl.com/ 2>&1 | grep -i "Location:" | head -n 1 | sed -n 's/.*Location: //p' | tr -d '\r')
 
-echo "The HTML provided appears to be a cache-busting landing page (NeverSSL)." | tee -a "$LOG_FILE"
-echo "This portal requires a manual redirect or browser-based interaction to trigger the actual login page." | tee -a "$LOG_FILE"
+echo "Redirect URL extracted: $REDIRECT_URL" | tee -a "$LOG_FILE"
 
-# Perform connectivity check to see if we are already online
-curl -v -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" http://neverssl.com/ > /dev/null 2>&1
-RESPONSE=$?
-if [ $RESPONSE -eq 0 ]; then
-    echo "Connectivity test successful. Already online." | tee -a "$LOG_FILE"
-    exit 0
-else
-    echo "Connectivity test failed. The portal is active but the login mechanism is not automated in this HTML." | tee -a "$LOG_FILE"
-    exit 1
+# 3. Handle the multi-page nature
+echo "Attempting to reach the Hotspots login page..." | tee -a "$LOG_FILE"
+# We use the cookie jar to maintain session state across the multi-step process
+curl -v -c /tmp/cookies.txt -b /tmp/cookies.txt -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "$REDIRECT_URL" > /tmp/portal_page.html 2>&1
+
+# 4. Check for and submit the login form if it exists
+# Extract form action and required hidden fields
+FORM_ACTION=$(grep -oP 'action="\K[^"]+' /tmp/portal_page.html | head -1)
+if [ -n "$FORM_ACTION" ]; then
+    echo "Found login form at $FORM_ACTION, attempting to accept terms..." | tee -a "$LOG_FILE"
+    # Example: Most public hotspots use a 'accept' or 'login' parameter with empty credentials
+    curl -v -c /tmp/cookies.txt -b /tmp/cookies.txt -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -X POST "$FORM_ACTION" -d "accept=true&login=Login" >> "$LOG_FILE" 2>&1
 fi
+
+# 5. Final connectivity check
+echo "Performing final connectivity check..." | tee -a "$LOG_FILE"
+ping -c 3 8.8.8.8 >/dev/null && echo "Successfully connected to internet." | tee -a "$LOG_FILE" && exit 0 || { echo "Failed to reach internet."; exit 1; }
