@@ -17,28 +17,32 @@ for i in {1..20}; do
     sleep 1
 done
 
-# 2. Trigger initial portal redirect to HotSplots
-echo "Triggering redirect..." | tee -a "$LOG_FILE"
-# We fetch http://neverssl.com/online to force the HotSplots login page redirect
-REDIRECT_URL=$(curl -v -L -A "$USER_AGENT" -c "$COOKIE_FILE" http://neverssl.com/online 2>&1 | grep -i "Location:" | tail -n 1 | sed -n 's/.*Location: //p' | tr -d '\r')
+# 2. Trigger initial portal check and capture redirect parameters
+echo "Triggering captive portal redirect..." | tee -a "$LOG_FILE"
+# We fetch the URL that causes the redirect, ensuring we grab the full Location string with all params
+REDIRECT_URL=$(curl -v -A "$USER_AGENT" -c "$COOKIE_FILE" http://neverssl.com/online 2>&1 | grep -i "Location:" | tail -n 1 | sed -n 's/.*Location: //p' | tr -d '\r')
 
-echo "Detected portal URL: $REDIRECT_URL" | tee -a "$LOG_FILE"
+echo "Initial Redirect URL: $REDIRECT_URL" | tee -a "$LOG_FILE"
 
-# 3. Handle the HotSplots login page
-# According to Hotsplots design, we need to POST the login form to reach the landing/accept page.
-echo "Fetching login page..." | tee -a "$LOG_FILE"
+# 3. Access the Landing Page (which contains the 'Online gehen' link)
+echo "Accessing landing page to fetch session parameters..." | tee -a "$LOG_FILE"
 curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "$REDIRECT_URL" > /tmp/portal_html.html 2>&1
 
-# Extract form action and submit standard accept
-FORM_ACTION=$(grep -oP 'action="\K[^"]+' /tmp/portal_html.html | head -1)
+# 4. Handle the 'prelogin' step found in the HTML
+# The HTML indicates a link: <a href="http://192.168.44.1/prelogin" class="btn btn-primary btn-lg">Online gehen</a>
+# We follow this link to finalize the authentication.
+PRELOGIN_URL="http://192.168.44.1/prelogin"
+echo "Navigating to $PRELOGIN_URL to initiate session..." | tee -a "$LOG_FILE"
+curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "$PRELOGIN_URL" > /tmp/post_login.html 2>&1
+
+# 5. Check if further Hotsplots auth is required (common in CoovaChilli setups)
+# If there is a form remaining, submit it.
+FORM_ACTION=$(grep -oP 'action="\K[^"]+' /tmp/post_login.html | head -1)
 if [ -n "$FORM_ACTION" ]; then
-    echo "Submitting form to $FORM_ACTION..." | tee -a "$LOG_FILE"
-    # Hotsplots usually requires an 'accept' parameter. We POST an empty login attempt to trigger session approval.
+    echo "Found remaining form at $FORM_ACTION, submitting..." | tee -a "$LOG_FILE"
     curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$FORM_ACTION" -d "accept=true&connect=Login" >> "$LOG_FILE" 2>&1
-else
-    echo "No specific form found, assuming auto-login or session established." | tee -a "$LOG_FILE"
 fi
 
-# 4. Final connectivity check
-echo "Verifying connectivity..." | tee -a "$LOG_FILE"
+# 6. Final connectivity check
+echo "Verifying internet connectivity..." | tee -a "$LOG_FILE"
 ping -c 3 8.8.8.8 >/dev/null && echo "Successfully connected." | tee -a "$LOG_FILE" && exit 0 || { echo "Failed to connect."; exit 1; }
