@@ -1,6 +1,6 @@
 #!/bin/bash
-LOG_FILE="/tmp/portal_login.log"
-echo "Starting Captive Portal Login..." | tee -a "$LOG_FILE"
+LOG_FILE="/tmp/wifi_login.log"
+echo "Starting login process..." | tee -a "$LOG_FILE"
 
 echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
@@ -12,24 +12,25 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Fetching initial redirect to identify grant_url..." | tee -a "$LOG_FILE"
-REDIRECT_RESPONSE=$(curl -v -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -L "http://detectportal.firefox.com/success.txt" 2>&1)
+USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-# Extract the final URL which contains the grant_url parameter
-GRANT_URL=$(echo "$REDIRECT_RESPONSE" | grep -oP '(?<=Location: )https://eu\.network-auth\.com/splash/[^/]+/grant' | head -n 1 | tr -d '\r')
+COOKIE_FILE="/tmp/c.txt"
+LANDING_FILE="/tmp/landing.html"
+
+echo "Following portal redirect chain starting from NeverSSL..." | tee -a "$LOG_FILE"
+FINAL_URL=$(curl -s -L -k -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -o "$LANDING_FILE" -w "%{url_effective}" "http://neverssl.com")
+echo "Ended up at: $FINAL_URL" | tee -a "$LOG_FILE"
+
+echo "Extracting grant_url from landing page..." | tee -a "$LOG_FILE"
+GRANT_URL=$(grep -o '"grant_url":"[^"]*"' "$LANDING_FILE" | head -n 1 | sed 's/"grant_url":"//;s/"//g' | sed 's/\\\/\//\//g')
 
 if [ -z "$GRANT_URL" ]; then
-    echo "Failed to extract GRANT_URL from redirect headers." | tee -a "$LOG_FILE"
-    exit 1
+    echo "Error: Could not extract grant_url. Trying fallback URL..." | tee -a "$LOG_FILE"
+    GRANT_URL="https://eu.network-auth.com/splash/LWndMchg.0.739/grant"
 fi
 
-echo "Found Grant URL: $GRANT_URL" | tee -a "$LOG_FILE"
-echo "Performing POST request to grant access..." | tee -a "$LOG_FILE"
+echo "Submitting authorization POST to: $GRANT_URL" | tee -a "$LOG_FILE"
+curl -s -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$GRANT_URL" > /dev/null
 
-# Performing the grant request
-RESPONSE=$(curl -v -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -X POST "$GRANT_URL" -d "button=Click+to+Connect" 2>&1)
-
-echo "HTTP Response Received." | tee -a "$LOG_FILE"
-
-echo "Performing final connectivity check..." | tee -a "$LOG_FILE"
-ping -c 3 8.8.8.8 >/dev/null && echo "Connectivity confirmed! Login successful." || { echo "Login failed or no internet access."; exit 1; }
+echo "Checking connectivity..." | tee -a "$LOG_FILE"
+ping -c 3 8.8.8.8 >/dev/null && echo "SUCCESS: Connected to Internet." | tee -a "$LOG_FILE" && exit 0 || { echo "FAILURE: Connectivity check failed."; exit 1; }
