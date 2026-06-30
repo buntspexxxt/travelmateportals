@@ -1,47 +1,36 @@
 #!/bin/bash
-echo "Starting Captive Portal Login Script..."
+echo "Starting ALDI SÜD Portal Login Script..."
 
 # 1. Wait for Network
-echo "Waiting for DHCP (IP & Gateway)..."
+echo "Waiting for DHCP..."
 for i in {1..20}; do
-    if ip route | grep -q default; then
-        echo "Gateway found! DHCP successful."
-        sleep 6
-        break
-    fi
+    if ip route | grep -q default; then echo "Gateway found."; sleep 6; break; fi
     sleep 1
 done
 
-# 2. Define Variables
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-# Detect landing redirect from captive portal check
+COOKIE_FILE="/tmp/wifi_cookies.txt"
+
+# 2. Get initial redirect
 echo "Fetching initial redirect..."
-REDIRECT_URL=$(curl -v -A "$USER_AGENT" -L -s -o /dev/null -w "%{url_effective}" http://detectportal.firefox.com/success.txt)
+REDIRECT_URL=$(curl -v -A "$USER_AGENT" -L -c "$COOKIE_FILE" -s -o /dev/null -w "%{url_effective}" http://connectivitycheck.gstatic.com/generate_204)
 echo "Redirect URL: $REDIRECT_URL"
 
-# 3. Extract query parameters from redirect
-QUERY_STRING=$(echo "$REDIRECT_URL" | grep -o '?.*' | cut -c 2-)
-echo "Extracted Query String: $QUERY_STRING"
+# 3. Extract the grant URL base and perform the handshake
+# The portal uses an XHR HEAD request to obtain the 'Continue-Url' header before navigation
+echo "Fetching session headers..."
+HEADER_RESPONSE=$(curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -I -X HEAD "$REDIRECT_URL")
+CONTINUE_URL=$(echo "$HEADER_RESPONSE" | sed -n 's/Continue-Url: //p' | tr -d '\\r')
 
-# 4. Attempt to resume session via Peplink API
-# The portal logic shows a call to /cp/session/resume
-# We dynamically reconstruct parameters based on the landing URL
-BASE_API="https://guest7.ic.peplink.com/cp/session/resume"
-echo "Checking session resume API..."
+# 4. Perform the grant request
+# Based on the JS analysis, the button triggers a visit to /grant?continue_url=...
+# We reconstruct the URL from the redirect path
+GRANT_URL=$(echo "$REDIRECT_URL" | sed 's/\/$/\/grant/')
+FINAL_GRANT_URL="${GRANT_URL}?continue_url=${CONTINUE_URL}"
 
-# Extracting parameters into a format compatible with curl POST
-# Using the query string as post data for the resume API
-RESPONSE=$(curl -v -A "$USER_AGENT" -X POST "$BASE_API" -d "$QUERY_STRING" -H "Content-Type: application/x-www-form-urlencoded")
-echo "API Response: $RESPONSE"
+echo "Performing final login grant..."
+curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" "$FINAL_GRANT_URL"
 
-# 5. Connect if session not active
-if echo "$RESPONSE" | grep -q "logout"; then
-    echo "Session requires login. Sending login command..."
-    curl -v -A "$USER_AGENT" "https://guest7.ic.peplink.com/cp/login?$QUERY_STRING&command=login"
-else
-    echo "Session appears active or already logged in."
-fi
-
-# 6. Final Connectivity Check
-echo "Performing final connectivity check..."
-ping -c 3 8.8.8.8 >/dev/null && { echo "Connectivity confirmed!" ; exit 0; } || { echo "Connectivity failed." ; exit 1; }
+# 5. Connectivity check
+echo "Checking internet..."
+ping -c 3 8.8.8.8 >/dev/null && { echo "Success!"; exit 0; } || { echo "Failed."; exit 1; }
