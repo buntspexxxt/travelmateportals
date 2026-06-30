@@ -1,6 +1,6 @@
 #!/bin/bash
 LOG_FILE="/tmp/portal_login.log"
-echo "Starting login process" | tee -a "$LOG_FILE"
+echo "Starting Hotsplots login process..." | tee -a "$LOG_FILE"
 
 echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
@@ -15,9 +15,11 @@ done
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 TEMP_HTML=$(mktemp)
 
-echo "Fetching login page to extract parameters..." | tee -a "$LOG_FILE"
-curl -v -A "$USER_AGENT" -c /tmp/cookies.txt -L "http://neverssl.com" -o "$TEMP_HTML"
+echo "Fetching initial redirect to extract session parameters..." | tee -a "$LOG_FILE"
+# We target the actual login page to get the initial state
+curl -v -A "$USER_AGENT" -c /tmp/cookies.txt -L "http://www.hotsplots.de/auth/login.php" -o "$TEMP_HTML"
 
+# Extracting hidden fields dynamically
 CHALLENGE=$(grep -o 'name="challenge" value="[^"]*"' "$TEMP_HTML" | cut -d'"' -f4)
 UAMIP=$(grep -o 'name="uamip" value="[^"]*"' "$TEMP_HTML" | cut -d'"' -f4)
 UAMPORT=$(grep -o 'name="uamport" value="[^"]*"' "$TEMP_HTML" | cut -d'"' -f4)
@@ -26,8 +28,9 @@ NASID=$(grep -o 'name="nasid" value="[^"]*"' "$TEMP_HTML" | cut -d'"' -f4)
 
 echo "Extracted Challenge: $CHALLENGE" | tee -a "$LOG_FILE"
 
-echo "Submitting login POST request..." | tee -a "$LOG_FILE"
-# Payload matches the form fields in the HTML provided
+echo "Submitting acceptance POST request..." | tee -a "$LOG_FILE"
+# The portal requires haveTerms=1, termsOK=on, and the hidden challenge/nasid fields
+# We follow the form action exactly
 RESPONSE=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt -c /tmp/cookies.txt \
   -d "haveTerms=1&termsOK=on&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&userurl=$USERURL&myLogin=agb&ll=de&nasid=$NASID&custom=1&button=kostenlos+einloggen" \
   "https://www.hotsplots.de/auth/login.php" 2>&1)
