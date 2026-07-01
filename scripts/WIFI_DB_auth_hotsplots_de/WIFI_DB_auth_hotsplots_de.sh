@@ -8,29 +8,33 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Fetching portal to extract form data..." | tee -a "$LOG_FILE"
-# Fetch initial page and capture cookies
-RESPONSE_RAW=$(curl -v -A "$USER_AGENT" -c /tmp/cookies.txt -L "http://neverssl.com" 2>&1)
-LANDING_URL=$(echo "$RESPONSE_RAW" | sed -n 's/.*Location: \(.*\)/\1/p' | tr -d '\\r' | tail -1 | xargs)
-[ -z "$LANDING_URL" ] && LANDING_URL="https://auth.hotsplots.de/login"
+echo "Fetching portal index to extract CSRF tokens and form fields..." | tee -a "$LOG_FILE"
+# Fetch landing page to get cookies and tokens
+HTML_CONTENT=$(curl -v -A "$USER_AGENT" -c /tmp/cookies.txt -L "http://neverssl.com")
 
-HTML_CONTENT=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt "$LANDING_URL")
+echo "Extracting dynamic hidden inputs..." | tee -a "$LOG_FILE"
+# Using POSIX sed to extract values safely
+CHALLENGE=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p')
+UAMIP=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p')
+UAMPORT=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p')
+TOKEN=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p')
 
-echo "Extracting hidden form tokens..." | tee -a "$LOG_FILE"
-CHALLENGE=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\\[challenge\\]" value="\\([^"]*\\)".*/\\1/p')
-UAMIP=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\\[uamip\\]" value="\\([^"]*\\)".*/\\1/p')
-UAMPORT=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\\[uamport\\]" value="\\([^"]*\\)".*/\\1/p')
-TOKEN=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\\[_token\\]" value="\\([^"]*\\)".*/\\1/p')
+if [ -z "$TOKEN" ]; then
+    echo "Error: Could not extract token. Aborting." | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-echo "Submitting acceptance form..." | tee -a "$LOG_FILE"
-# Submitting POST request as per 'Jetzt kostenlos surfen' button requirement
-SUBMIT_RESPONSE=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt -c /tmp/cookies.txt \
+echo "Submitting acceptance form with collected tokens..." | tee -a "$LOG_FILE"
+# Submitting POST request to the auth server
+RESPONSE=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt -c /tmp/cookies.txt \
   -d "login_status_form[button]=" \
   -d "login_status_form[challenge]=$CHALLENGE" \
   -d "login_status_form[uamip]=$UAMIP" \
   -d "login_status_form[uamport]=$UAMPORT" \
   -d "login_status_form[_token]=$TOKEN" \
-  "$LANDING_URL")
+  "https://auth.hotsplots.de/login")
+
+echo "HTTP Response Received." | tee -a "$LOG_FILE"
 
 echo "Connectivity check..." | tee -a "$LOG_FILE"
 ping -c 3 8.8.8.8 >/dev/null && echo "Success: Internet access confirmed." || { echo "Failure: Internet access not detected."; exit 1; }
