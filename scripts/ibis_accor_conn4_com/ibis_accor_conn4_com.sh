@@ -19,7 +19,7 @@ done
 # 2. Trigger initial redirect
 echo "Fetching redirect page from neverssl.com..." | tee -a "$LOG_FILE"
 rm -f "$COOKIE_JAR"
-RESPONSE=$(curl -v -L -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+RESPONSE=$(curl -k -k -v -L -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
      --connect-timeout 10 \
      -A "$USER_AGENT" \
      "http://neverssl.com" 2>&1)
@@ -27,10 +27,10 @@ RESPONSE=$(curl -v -L -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
 # Extract effective URL
 EFFECTIVE_URL=$(echo "$RESPONSE" | grep -i "< Location:" | tail -n 1 | sed -n "s/.*Location: //p" | tr -d '\r')
 if [ -z "$EFFECTIVE_URL" ]; then
-    HTML_BODY=$(curl -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "http://neverssl.com")
+    HTML_BODY=$(curl -k -k -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "http://neverssl.com")
 else
     echo "Redirected to: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
-    HTML_BODY=$(curl -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "$EFFECTIVE_URL")
+    HTML_BODY=$(curl -k -k -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "$EFFECTIVE_URL")
 fi
 
 # Extract scenePlayerUri from __sceneConfig in the HTML body
@@ -49,7 +49,7 @@ fi
 SCENE_PLAYER_URL="https://accor.conn4.com${SCENE_PLAYER_URI}"
 echo "Fetching Scene Player: $SCENE_PLAYER_URL" | tee -a "$LOG_FILE"
 
-PLAYER_BODY=$(curl -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "$SCENE_PLAYER_URL")
+PLAYER_BODY=$(curl -k -k -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "$SCENE_PLAYER_URL")
 
 # Extract token and id from player body JSON
 TOKEN=$(echo "$PLAYER_BODY" | sed -n 's/.*"token":"\([^"/]*\)".*/\1/p')
@@ -65,11 +65,11 @@ fi
 
 SCENE_URL="https://accor.conn4.com/scenes/${SCENE_ID}/"
 echo "Initializing scene URL: $SCENE_URL" | tee -a "$LOG_FILE"
-curl -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" -H "Referer: $SCENE_PLAYER_URL" "$SCENE_URL" > /dev/null
+curl -k -k -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" -H "Referer: $SCENE_PLAYER_URL" "$SCENE_URL" > /dev/null
 
 # 3. Create Session POST
 echo "Creating session..." | tee -a "$LOG_FILE"
-SESSION_RESPONSE=$(curl -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" \
+SESSION_RESPONSE=$(curl -k -k -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" \
     -X POST \
     -H "Referer: $SCENE_URL" \
     -H "X-Requested-With: XMLHttpRequest" \
@@ -93,7 +93,7 @@ fi
 
 # 4. Register Free Session POST
 echo "Registering free internet access..." | tee -a "$LOG_FILE"
-REGISTER_RESPONSE=$(curl -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" \
+REGISTER_RESPONSE=$(curl -k -k -s -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" \
     -X POST \
     -H "Referer: $SCENE_URL" \
     -H "X-Requested-With: XMLHttpRequest" \

@@ -10,10 +10,10 @@ done
 
 echo "Step 1: Fetching initial redirect to get Session ID and parameters..." | tee -a "$LOG_FILE"
 # Capture initial redirect and session cookie
-INITIAL_RESPONSE=$(curl -v -A "$USER_AGENT" -c /tmp/cookies.txt -L "http://neverssl.com" 2>&1)
+INITIAL_RESPONSE=$(curl -k -k -v -A "$USER_AGENT" -c /tmp/cookies.txt -L "http://neverssl.com" 2>&1)
 
 echo "Step 2: Parsing landing page for hidden form fields..." | tee -a "$LOG_FILE"
-HTML_CONTENT=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt -L "https://auth.hotsplots.de/login")
+HTML_CONTENT=$(curl -k -k -v -A "$USER_AGENT" -b /tmp/cookies.txt -L "https://auth.hotsplots.de/login")
 
 # Extract hidden tokens using POSIX sed
 CHALLENGE=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p')
@@ -28,7 +28,7 @@ fi
 
 echo "Step 3: Submitting acceptance form..." | tee -a "$LOG_FILE"
 # Submit form data extracted from the page
-FINAL_RESPONSE=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt -c /tmp/cookies.txt \
+FINAL_RESPONSE=$(curl -k -k -v -A "$USER_AGENT" -b /tmp/cookies.txt -c /tmp/cookies.txt \
   -d "login_status_form[button]=" \
   -d "login_status_form[challenge]=$CHALLENGE" \
   -d "login_status_form[uamip]=$UAMIP" \

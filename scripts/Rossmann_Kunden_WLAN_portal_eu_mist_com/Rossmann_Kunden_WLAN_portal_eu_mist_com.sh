@@ -15,9 +15,9 @@ done
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 echo "Fetching portal page to get session parameters..." | tee -a "$LOG_FILE"
-HTML=$(curl -v -A "$USER_AGENT" -c /tmp/portal_cookies.txt -L "http://neverssl.com")
+HTML=$(curl -k -v -A "$USER_AGENT" -c /tmp/portal_cookies.txt -L "http://neverssl.com")
 
-EFFECTIVE_URL=$(curl -v -A "$USER_AGENT" -b /tmp/portal_cookies.txt -c /tmp/portal_cookies.txt -w "%{url_effective}" -o /dev/null -s "http://neverssl.com")
+EFFECTIVE_URL=$(curl -k -v -A "$USER_AGENT" -b /tmp/portal_cookies.txt -c /tmp/portal_cookies.txt -w "%{url_effective}" -o /dev/null -s "http://neverssl.com")
 echo "Effective URL: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
 
 # Extract hidden fields dynamically
@@ -28,7 +28,7 @@ URL_VAL=$(echo "$HTML" | sed -n 's/.*name="url" value="\([^"]*\)".*/\1/p' | head
 
 echo "Submitting form for MAC: $CLIENT_MAC..." | tee -a "$LOG_FILE"
 
-RESPONSE=$(curl -v -A "$USER_AGENT" -b /tmp/portal_cookies.txt -c /tmp/portal_cookies.txt \
+RESPONSE=$(curl -k -v -A "$USER_AGENT" -b /tmp/portal_cookies.txt -c /tmp/portal_cookies.txt \
   -d "ap_mac=$AP_MAC" \
   -d "client_mac=$CLIENT_MAC" \
   -d "wlan_id=$WLAN_ID" \

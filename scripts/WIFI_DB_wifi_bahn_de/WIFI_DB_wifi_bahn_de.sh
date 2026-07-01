@@ -25,18 +25,18 @@ fi
 
 # Try accessing neverssl.com first to initialize the portal redirect
 echo "Accessing neverssl.com to trigger redirect..." | tee -a "$LOG_FILE"
-curl -s -L -k -A "$USER_AGENT" -o /dev/null "http://neverssl.com"
+curl -k -k -s -L -k -A "$USER_AGENT" -o /dev/null "http://neverssl.com"
 
 # 2. Fetch the initial landing page and save cookies
 echo "Fetching landing page from login.wifionice.de..." | tee -a "$LOG_FILE"
 rm -f "$COOKIE_JAR" "$HTML_PAGE"
 
-curl -s -k -L -A "$USER_AGENT" -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+curl -k -k -s -k -L -A "$USER_AGENT" -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
      "http://login.wifionice.de/de/" > "$HTML_PAGE"
 
 if [ ! -s "$HTML_PAGE" ] || grep -q "failed" "$HTML_PAGE"; then
     echo "Fallback: Fetching from wifi.bahn.de..." | tee -a "$LOG_FILE"
-    curl -s -k -L -A "$USER_AGENT" -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+    curl -k -k -s -k -L -A "$USER_AGENT" -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
          "https://wifi.bahn.de/" > "$HTML_PAGE"
 fi
 
@@ -60,7 +60,7 @@ echo "Extracted CSRFToken: $TOKEN" | tee -a "$LOG_FILE"
 
 # 4. Perform POST login
 echo "Submitting terms and conditions to login.wifionice.de..." | tee -a "$LOG_FILE"
-LOGIN_RESPONSE=$(curl -s -k -L -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+LOGIN_RESPONSE=$(curl -k -k -s -k -L -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
      -X POST \
      -d "login=true&CSRFToken=${TOKEN}&connect=" \
      "http://login.wifionice.de/de/")
@@ -71,7 +71,7 @@ echo "Response length: ${#LOGIN_RESPONSE}" | tee -a "$LOG_FILE"
 sleep 3
 if ! ping -c 3 8.8.8.8 >/dev/null 2>&1; then
     echo "Fallback login to wifi.bahn.de..." | tee -a "$LOG_FILE"
-    curl -s -k -L -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+    curl -k -k -s -k -L -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
          -X POST \
          -d "login=true&CSRFToken=${TOKEN}&connect=" \
          "https://wifi.bahn.de/" > /dev/null

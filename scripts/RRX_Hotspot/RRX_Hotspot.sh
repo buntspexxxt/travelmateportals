@@ -16,11 +16,11 @@ for i in {1..20}; do
 done
 
 echo "Accessing the initial portal trigger..." | tee -a "$LOG_FILE"
-curl -v -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "http://neverssl.com" > /tmp/portal_page.html 2>&1
+curl -k -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "http://neverssl.com" > /tmp/portal_page.html 2>&1
 
 echo "Following redirect to hotspot provider (https://www.hotspots.de)..." | tee -a "$LOG_FILE"
 # We use -L to follow redirects and store the final landing page
-curl -v -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -L "https://www.hotspots.de" > /tmp/login_page.html 2>&1
+curl -k -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -L "https://www.hotspots.de" > /tmp/login_page.html 2>&1
 
 echo "Searching for form buttons to click..." | tee -a "$LOG_FILE"
 # Extracting potential POST action or form details if needed, but per instructions, just clicking the button is sufficient.
@@ -33,7 +33,7 @@ else
     echo "Submitting form to $FORM_ACTION..." | tee -a "$LOG_FILE"
     # Per instructions, no checkboxes needed, just a trigger.
     # Using POST to the action URL identified.
-    curl -v -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -L -d "submit=1" "$FORM_ACTION" > /tmp/final_auth.html 2>&1
+    curl -k -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -L -d "submit=1" "$FORM_ACTION" > /tmp/final_auth.html 2>&1
 fi
 
 echo "Final connectivity check..." | tee -a "$LOG_FILE"

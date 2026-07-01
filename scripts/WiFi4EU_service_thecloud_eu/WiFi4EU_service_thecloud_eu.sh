@@ -19,7 +19,7 @@ COOKIE_JAR="/tmp/wifi_cookies.txt"
 
 # 2. Get the redirect and session cookie
 echo "Initial request to detect portal..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -v -A "$USER_AGENT" -c "$COOKIE_JAR" -L "http://detectportal.firefox.com/success.txt" 2>&1)
+RESPONSE=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_JAR" -L "http://detectportal.firefox.com/success.txt" 2>&1)
 echo "HTTP Response details captured." | tee -a "$LOG_FILE"
 
 # 3. Extract the 'Get Online' link
@@ -33,7 +33,7 @@ fi
 
 # 4. Navigate to the activation URL to finalize
 echo "Accessing activation URL: $GET_ONLINE_URL" | tee -a "$LOG_FILE"
-ACTIVATION_RESULT=$(curl -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -L "$GET_ONLINE_URL" 2>&1)
+ACTIVATION_RESULT=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -L "$GET_ONLINE_URL" 2>&1)
 
 # 5. Final connectivity test
 echo "Connectivity test..." | tee -a "$LOG_FILE"

@@ -18,7 +18,7 @@ USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 COOKIE_FILE="/tmp/cookies_captive_portal.txt"
 
 echo "Step 1: Accessing initial portal page..."
-curl -v -A "$USER_AGENT" -c "$COOKIE_FILE" -o /tmp/index.html "https://469.rdr.conn4.com/"
+curl -k -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -o /tmp/index.html "https://469.rdr.conn4.com/"
 
 echo "Step 2: Extracting WBS token from HTML script block..."
 # Extracting the full JSON token from the script variable assignment
@@ -34,7 +34,7 @@ echo "Token identified."
 echo "Step 3: Triggering scene loader via POST..."
 # The HTML structure uses 'conn4.startSceneLoader' which likely registers the device.
 # We attempt to post the token to the roaming/return endpoint as identified in the WISPAccessGatewayParam
-RESPONSE=$(curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://469.rdr.conn4.com/wbs/de/roaming/return/" -d "token=$WBS_TOKEN")
+RESPONSE=$(curl -k -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://469.rdr.conn4.com/wbs/de/roaming/return/" -d "token=$WBS_TOKEN")
 
 echo "HTTP Response Received: $RESPONSE"
 

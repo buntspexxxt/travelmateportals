@@ -26,7 +26,7 @@ fi
 echo "Fetching redirect page and generating cookies..." | tee -a "$LOG_FILE"
 rm -f "$COOKIE_JAR"
 
-RESPONSE=$(curl -v -L -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+RESPONSE=$(curl -k -k -v -L -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
      --connect-timeout 15      --user-agent "$USER_AGENT" \
      "http://neverssl.com" 2>&1)
 
@@ -39,7 +39,7 @@ echo "Redirect URL found: $REDIRECT_URL" | tee -a "$LOG_FILE"
 
 # 3. Post to freeLogin endpoint
 echo "Submitting freeLogin activation..." | tee -a "$LOG_FILE"
-LOGIN_RESPONSE=$(curl -v -k -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+LOGIN_RESPONSE=$(curl -k -k -v -k -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
      -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
      --connect-timeout 15 \
      -H "Content-Type: application/x-www-form-urlencoded" \
@@ -58,7 +58,7 @@ if ping -c 3 8.8.8.8 >/dev/null 2>&1; then
     exit 0
 else
     echo "Trying fallback simple JSON POST..." | tee -a "$LOG_FILE"
-    curl -s -k -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
+    curl -k -k -s -k -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
          -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
          -H "Content-Type: application/json" \
          --user-agent "$USER_AGENT" \

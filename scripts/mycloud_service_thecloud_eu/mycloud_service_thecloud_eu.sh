@@ -25,12 +25,12 @@ fi
 # 2. Start from neverssl.com and follow all redirects to landing page
 echo "Following redirect chain from neverssl.com to establish session..." | tee -a "$LOG_FILE"
 rm -f "$COOKIE_FILE"
-LANDING_URL=$(curl -v -L -k -A "$UA" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -w "%{url_effective}" -o /dev/null http://neverssl.com 2>/dev/null)
+LANDING_URL=$(curl -k -k -v -L -k -A "$UA" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -w "%{url_effective}" -o /dev/null http://neverssl.com 2>/dev/null)
 echo "Landing URL obtained: $LANDING_URL" | tee -a "$LOG_FILE"
 
 # 3. POST to the registration endpoint using the session cookies
 echo "Submitting form to registration endpoint..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -v -k -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration" \
+RESPONSE=$(curl -k -k -v -k -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration" \
     -X POST \
     -d "submit=Continue" 2>&1)
 
@@ -41,7 +41,7 @@ echo "Checking internet connectivity..." | tee -a "$LOG_FILE"
 sleep 5
 ping -c 3 8.8.8.8 >/dev/null && { echo "Success: Internet access restored."; rm -f "$COOKIE_FILE"; exit 0; } || {
     echo "Trying fallback login to wbs API..." | tee -a "$LOG_FILE"
-    curl -v -k -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration" >> "$LOG_FILE" 2>&1
+    curl -k -k -v -k -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration" >> "$LOG_FILE" 2>&1
     sleep 5
     ping -c 3 8.8.8.8 >/dev/null && { echo "Success on fallback!"; rm -f "$COOKIE_FILE"; exit 0; }
 }
