@@ -13,34 +13,31 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Fetching initial portal page to obtain session cookies..."
-curl -v -A "$UA" -c "$COOKIE_FILE" "https://service.thecloud.eu/service-platform/macauthlogin/v5" > /dev/null 2>&1
+echo "Fetching initial portal page to obtain session cookies..." | tee -a "$LOG_FILE"
+HTML=$(curl -v -A "$UA" -c "$COOKIE_FILE" "https://service.thecloud.eu/service-platform/macauthlogin/v5" 2>&1)
 
-echo "Submitting registration form (Step 1)..."
-# We use the cookies obtained from the initial GET to ensure the session is active
-# Note: Some portals require an explicit POST to the same URL to accept terms
-SUBMIT_RESPONSE=$(curl -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration" \
+echo "Submitting registration form (Step 1)..." | tee -a "$LOG_FILE"
+# The form action points to /service-platform/macauthlogin/v5/registration
+# The button has text 'Continue'.
+RESPONSE=$(curl -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration" \
     -X POST \
     -d "submit=Continue" 2>&1)
 
-echo "HTTP Response from registration: $SUBMIT_RESPONSE"
+echo "HTTP Response from registration: $RESPONSE" | tee -a "$LOG_FILE"
 
-echo "Checking for hidden fields in the response..."
-# The HTML suggests standard form submission. If no redirect follows, we might need to confirm the session.
-
-echo "Verifying internet connectivity..."
+echo "Verifying internet connectivity..." | tee -a "$LOG_FILE"
 ping -c 3 8.8.8.8 >/dev/null 2>&1
 if [ $? -eq 0 ]; then
-    echo "Login successful: Internet access confirmed."
+    echo "Login successful: Internet access confirmed." | tee -a "$LOG_FILE"
     exit 0
 else
-    echo "Login failed: No internet access detected. Retrying with a secondary verification..."
+    echo "Login failed: No internet access. Retrying once..." | tee -a "$LOG_FILE"
     sleep 5
     ping -c 3 8.8.8.8 >/dev/null 2>&1
     if [ $? -eq 0 ]; then
-        echo "Login successful after retry."
+        echo "Login successful after retry." | tee -a "$LOG_FILE"
         exit 0
     fi
-    echo "Login failed: No internet access detected."
+    echo "Login failed: No internet access detected." | tee -a "$LOG_FILE"
     exit 1
 fi
