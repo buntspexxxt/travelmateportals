@@ -17,24 +17,26 @@ done
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 COOKIE_FILE="/tmp/cookies_captive_portal.txt"
 
-echo "Step 1: Initial access to landing page..."
+echo "Step 1: Accessing initial portal page..."
 curl -v -A "$USER_AGENT" -c "$COOKIE_FILE" -o /tmp/index.html "https://469.rdr.conn4.com/"
 
-echo "Step 2: Extracting WBS token from HTML..."
-WBS_TOKEN=$(sed -n 's/.*conn4.hotspot.wbsToken = {"token":"\([^"]*\)".*/\1/p' /tmp/index.html)
+echo "Step 2: Extracting WBS token from HTML script block..."
+# Extracting the full JSON token from the script variable assignment
+WBS_TOKEN=$(sed -n 's/.*conn4.hotspot.wbsToken = \({"token":"[^"]*","urls":{[^}]*}\});.*/\1/p' /tmp/index.html | sed 's/"token":"\([^"]*\)".*/\1/')
 
 if [ -z "$WBS_TOKEN" ]; then
     echo "Failed to extract WBS token. Exiting."
     exit 1
 fi
 
-echo "Token found: $WBS_TOKEN"
+echo "Token identified."
 
-echo "Step 3: Submitting authentication payload..."
-# The portal requires hitting the grant endpoint with the extracted token
+echo "Step 3: Triggering scene loader via POST..."
+# The HTML structure uses 'conn4.startSceneLoader' which likely registers the device.
+# We attempt to post the token to the roaming/return endpoint as identified in the WISPAccessGatewayParam
 RESPONSE=$(curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://469.rdr.conn4.com/wbs/de/roaming/return/" -d "token=$WBS_TOKEN")
 
-echo "HTTP Response: $RESPONSE"
+echo "HTTP Response Received: $RESPONSE"
 
-echo "Step 4: Confirming connectivity..."
-ping -c 3 8.8.8.8 >/dev/null && echo "Internet access confirmed." && exit 0 || exit 1
+echo "Step 4: Performing connectivity test..."
+ping -c 3 8.8.8.8 >/dev/null && echo "Internet access confirmed." && exit 0 || echo "Connectivity check failed." && exit 1
