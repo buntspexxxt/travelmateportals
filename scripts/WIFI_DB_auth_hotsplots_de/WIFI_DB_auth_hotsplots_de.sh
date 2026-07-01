@@ -8,31 +8,33 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Fetching portal index to extract CSRF tokens and form fields..." | tee -a "$LOG_FILE"
-# Fetch landing page to get cookies and tokens
-HTML_CONTENT=$(curl -v -A "$USER_AGENT" -c /tmp/cookies.txt -L "http://neverssl.com")
+echo "Step 1: Fetching initial redirect to get Session ID and parameters..." | tee -a "$LOG_FILE"
+# Capture initial redirect and session cookie
+INITIAL_RESPONSE=$(curl -v -A "$USER_AGENT" -c /tmp/cookies.txt -L "http://neverssl.com" 2>&1)
 
-echo "Extracting dynamic hidden inputs..." | tee -a "$LOG_FILE"
-# Using POSIX sed to extract values safely
+echo "Step 2: Parsing landing page for hidden form fields..." | tee -a "$LOG_FILE"
+HTML_CONTENT=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt -L "https://auth.hotsplots.de/login")
+
+# Extract hidden tokens using POSIX sed
 CHALLENGE=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p')
 UAMIP=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p')
 UAMPORT=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p')
 TOKEN=$(echo "$HTML_CONTENT" | sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p')
 
 if [ -z "$TOKEN" ]; then
-    echo "Error: Could not extract token. Aborting." | tee -a "$LOG_FILE"
+    echo "Error: Could not extract token from HTML. Aborting." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Submitting acceptance form with collected tokens..." | tee -a "$LOG_FILE"
-# Submitting POST request to the auth server
-RESPONSE=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt -c /tmp/cookies.txt \
+echo "Step 3: Submitting acceptance form..." | tee -a "$LOG_FILE"
+# Submit form data extracted from the page
+FINAL_RESPONSE=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt -c /tmp/cookies.txt \
   -d "login_status_form[button]=" \
   -d "login_status_form[challenge]=$CHALLENGE" \
   -d "login_status_form[uamip]=$UAMIP" \
   -d "login_status_form[uamport]=$UAMPORT" \
   -d "login_status_form[_token]=$TOKEN" \
-  "https://auth.hotsplots.de/login")
+  "https://auth.hotsplots.de/login" 2>&1)
 
 echo "HTTP Response Received." | tee -a "$LOG_FILE"
 
