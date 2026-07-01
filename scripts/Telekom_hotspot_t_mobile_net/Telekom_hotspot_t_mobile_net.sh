@@ -22,3 +22,4 @@ echo "WARNING: Automated login is currently not possible without a full browser 
 
 # 3. Final connectivity check
 ping -c 3 8.8.8.8 >/dev/null && echo "Connectivity confirmed." || { echo "Connectivity failed."; exit 1; }
+exit 1
