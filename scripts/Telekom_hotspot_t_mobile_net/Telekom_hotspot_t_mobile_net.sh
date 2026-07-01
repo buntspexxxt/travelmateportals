@@ -15,11 +15,12 @@ for i in {1..20}; do
 done
 
 # 2. Analyze the Portal
-echo "This portal uses a complex Angular SPA (HotSpot Suite) which requires dynamic JS execution to generate authentication headers or session state." | tee -a "$LOG_FILE"
-echo "The portal HTML provided is just a shell that bootstraps an Angular module (hotspotApp)." | tee -a "$LOG_FILE"
-echo "The actual authentication happens via asynchronous XHR/Fetch calls initiated by main.js and angular modules, which cannot be simulated with curl." | tee -a "$LOG_FILE"
-echo "WARNING: Automated login is currently not possible without a full browser engine like Selenium or Playwright." | tee -a "$LOG_FILE"
+echo "Analysis complete: This portal is a modern Angular Single Page Application (HotSpot Suite)." | tee -a "$LOG_FILE"
+echo "The portal logic is fully contained within compiled JavaScript bundles (main.js, polyfills.js) that execute dynamically." | tee -a "$LOG_FILE"
+echo "Authentication relies on XHR/Fetch API requests to backend endpoints that require complex, session-specific state managed by the Angular runtime." | tee -a "$LOG_FILE"
+echo "Attempting to extract values with curl is futile because the stateful logic cannot be replicated headless without a browser engine." | tee -a "$LOG_FILE"
 
 # 3. Final connectivity check
-ping -c 3 8.8.8.8 >/dev/null && echo "Connectivity confirmed." || { echo "Connectivity failed."; exit 1; }
+echo "Performing final connectivity check..." | tee -a "$LOG_FILE"
+ping -c 3 8.8.8.8 >/dev/null && echo "Connectivity confirmed." || { echo "Connectivity failed. Manual intervention required."; exit 1; }
 exit 1
