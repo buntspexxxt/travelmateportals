@@ -20,6 +20,7 @@ USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 COOKIES="/tmp/portal_cookies.txt"
 
 echo "Accessing landing page to retrieve session tokens..."
+# We use the root URL to trigger the portal logic
 curl -A "$USER_AGENT" -v -L -c "$COOKIES" -b "$COOKIES" "https://accor.conn4.com/" > /tmp/portal_page.html 2>&1
 
 # Extract Scene URI
@@ -30,11 +31,14 @@ echo "Requesting connection initialization via Scene API..."
 RESPONSE=$(curl -A "$USER_AGENT" -v -b "$COOKIES" -c "$COOKIES" -X POST "https://accor.conn4.com${SCENE_URI}select" -H "Content-Type: application/json" -d '{"planId": "free-24h"}')
 echo "API Response: $RESPONSE"
 
-# Modern Conn4 portals often require a 'connect' confirmation after selection
 echo "Confirming connection..."
 CONN_RESPONSE=$(curl -A "$USER_AGENT" -v -b "$COOKIES" -c "$COOKIES" -X POST "https://accor.conn4.com${SCENE_URI}connect" -H "Content-Type: application/json" -d '{}')
 echo "Connection Status: $CONN_RESPONSE"
 
-# Final step: The HTML indicates a multi-stage process. If 'connect' fails, retry with 'accept' if the API supports it.
-echo "Verifying internet connectivity..."
+echo "Checking for secondary acceptance requirement..."
+# Check if terms need an explicit accept POST
+ACCEPT_RESPONSE=$(curl -A "$USER_AGENT" -v -b "$COOKIES" -c "$COOKIES" -X POST "https://accor.conn4.com${SCENE_URI}accept" -H "Content-Type: application/json" -d '{"terms": true}')
+echo "Acceptance Response: $ACCEPT_RESPONSE"
+
+echo "Performing connectivity check..."
 ping -c 3 8.8.8.8 >/dev/null && echo "Success: Internet reached." && exit 0 || echo "Error: Connection failed." && exit 1
