@@ -1,8 +1,8 @@
 #!/bin/bash
 LOG_FILE="/tmp/portal_login.log"
-echo "Starting login script..." | tee -a "$LOG_FILE"
+echo "Starting multi-stage login script..." | tee -a "$LOG_FILE"
 
-echo "Waiting for DHCP..." | tee -a "$LOG_FILE"
+echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
     if ip route | grep -q default; then
         echo "Gateway found! DHCP successful." | tee -a "$LOG_FILE"
@@ -14,34 +14,40 @@ done
 
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-echo "Detecting redirect..." | tee -a "$LOG_FILE"
-# Fetch landing page to get initial session and redirect parameters
+echo "Fetching initial landing page..." | tee -a "$LOG_FILE"
+# Using -v to see headers, capturing response
 REDIRECT_INFO=$(curl -v -A "$USER_AGENT" -L "http://neverssl.com" 2>&1)
-LANDING_URL=$(echo "$REDIRECT_INFO" | sed -n 's/.*Location: //p' | tr -d '\\r' | head -n 1)
+LANDING_URL=$(echo "$REDIRECT_INFO" | sed -n 's/.*Location: //p' | tr -d '\r' | head -n 1)
 echo "Landing URL: $LANDING_URL" | tee -a "$LOG_FILE"
 
-echo "Fetching splash page..." | tee -a "$LOG_FILE"
+echo "Fetching splash page to acquire session cookies..." | tee -a "$LOG_FILE"
 PAGE_HTML=$(curl -v -A "$USER_AGENT" -c /tmp/c.txt -b /tmp/c.txt "$LANDING_URL")
 
-echo "Executing XMLHttpRequest handshake to get 'Continue-Url' header..." | tee -a "$LOG_FILE"
-# The portal requires an AJAX call to the HEAD of the current URL to get the 'Continue-Url' header
+echo "Executing AJAX handshake to get Continue-Url..." | tee -a "$LOG_FILE"
+# Based on portal JS, we need to perform a HEAD request to trigger the header discovery
 HANDSHAKE=$(curl -v -A "$USER_AGENT" -c /tmp/c.txt -b /tmp/c.txt -X HEAD -H "X-Requested-With: XMLHttpRequest" "$LANDING_URL" 2>&1)
-CONTINUE_URL=$(echo "$HANDSHAKE" | grep -i "Continue-Url" | awk '{print $2}' | tr -d '\\r')
+CONTINUE_URL=$(echo "$HANDSHAKE" | sed -n 's/.*Continue-Url: //p' | tr -d '\r')
 
 if [ -z "$CONTINUE_URL" ]; then
-    echo "Failed to extract Continue-Url. Aborting." | tee -a "$LOG_FILE"
+    echo "Failed to extract Continue-Url from headers. Falling back to default." | tee -a "$LOG_FILE"
+    CONTINUE_URL="https://www.obi.de"
+fi
+echo "Continue URL target: $CONTINUE_URL" | tee -a "$LOG_FILE"
+
+echo "Extracting grant link from HTML..." | tee -a "$LOG_FILE"
+# Extraction of the specific grant link path found in the provided HTML source
+GRANT_PATH=$(echo "$PAGE_HTML" | sed -n 's/.*href="\([^"]*grant?continue_url=[^"]*\)".*/\1/p' | head -n 1 | sed 's/&amp;/\&/g')
+
+if [ -z "$GRANT_PATH" ]; then
+    echo "Error: Could not find grant link in HTML." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Extracted Continue-Url: $CONTINUE_URL" | tee -a "$LOG_FILE"
-echo "Constructing final grant request..." | tee -a "$LOG_FILE"
+# Replacing placeholder if necessary
+FINAL_GRANT_URL=$(echo "$GRANT_PATH" | sed "s/CONTINUE_URL_PLACEHOLDER/$CONTINUE_URL/g")
 
-# Dynamic construction of grant URL based on provided HTML structure
-BASE_PATH=$(echo "$LANDING_URL" | sed 's/splash\/?.*//')
-GRANT_URL="${BASE_PATH}grant?continue_url=$CONTINUE_URL"
-
-echo "Requesting Grant: $GRANT_URL" | tee -a "$LOG_FILE"
-curl -v -A "$USER_AGENT" -c /tmp/c.txt -b /tmp/c.txt "$GRANT_URL"
+echo "Submitting grant request to: $FINAL_GRANT_URL" | tee -a "$LOG_FILE"
+curl -v -A "$USER_AGENT" -c /tmp/c.txt -b /tmp/c.txt "$FINAL_GRANT_URL"
 
 echo "Verifying connectivity..." | tee -a "$LOG_FILE"
 sleep 5
