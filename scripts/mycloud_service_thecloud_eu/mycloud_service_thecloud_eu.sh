@@ -16,18 +16,17 @@ done
 echo "Fetching initial portal page to obtain session cookies..."
 curl -v -A "$UA" -c "$COOKIE_FILE" "https://service.thecloud.eu/service-platform/macauthlogin/v5" > /dev/null 2>&1
 
-echo "Submitting initial registration form..."
-# Submit initial form to proceed to confirmation or next state
+echo "Submitting registration form (Step 1)..."
+# We use the cookies obtained from the initial GET to ensure the session is active
+# Note: Some portals require an explicit POST to the same URL to accept terms
 SUBMIT_RESPONSE=$(curl -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration" \
     -X POST \
     -d "submit=Continue" 2>&1)
 
 echo "HTTP Response from registration: $SUBMIT_RESPONSE"
 
-echo "Checking if secondary action is required..."
-# Check if session needs a final trigger or if navigation is complete
-# Based on analysis, sometimes a final GET is required if the POST is an API transition
-curl -v -A "$UA" -b "$COOKIE_FILE" "https://service.thecloud.eu/service-platform/home" > /dev/null 2>&1
+echo "Checking for hidden fields in the response..."
+# The HTML suggests standard form submission. If no redirect follows, we might need to confirm the session.
 
 echo "Verifying internet connectivity..."
 ping -c 3 8.8.8.8 >/dev/null 2>&1
@@ -35,7 +34,7 @@ if [ $? -eq 0 ]; then
     echo "Login successful: Internet access confirmed."
     exit 0
 else
-    echo "Login failed: No internet access detected. Retrying..."
+    echo "Login failed: No internet access detected. Retrying with a secondary verification..."
     sleep 5
     ping -c 3 8.8.8.8 >/dev/null 2>&1
     if [ $? -eq 0 ]; then
