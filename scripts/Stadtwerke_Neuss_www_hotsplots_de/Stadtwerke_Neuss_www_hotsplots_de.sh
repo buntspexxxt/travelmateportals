@@ -17,6 +17,7 @@ done
 rm -f /tmp/cookies.txt /tmp/login_page.html
 
 echo "Triggering portal redirect..." | tee -a "$LOG_FILE"
+# Using -v to capture headers for redirect URL extraction
 REDIRECT_RESPONSE=$(curl -v -A "$USER_AGENT" -c /tmp/cookies.txt "http://neverssl.com" 2>&1)
 REDIRECT_URL=$(echo "$REDIRECT_RESPONSE" | sed -n 's/.*Location: //p' | tr -d '\r' | head -n 1)
 
