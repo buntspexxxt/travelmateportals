@@ -1,0 +1,45 @@
+#!/bin/bash
+LOG_FILE=/tmp/portal_login.log
+UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+echo "Waiting for DHCP (IP & Gateway)..." | tee -a \$LOG_FILE
+for i in {1..20}; do
+    if ip route | grep -q default; then
+        echo "Gateway found! DHCP successful." | tee -a \$LOG_FILE
+        sleep 6
+        break
+    fi
+    sleep 1
+done
+
+echo "Fetching initial redirect to identify parameters..."
+# Capture initial redirect to get parameters from the URL
+REDIRECT_OUTPUT=$(curl -v -A "\$UA" http://detectportal.firefox.com/success.txt 2>&1)
+LOCATION=$(echo "\$REDIRECT_OUTPUT" | sed -n 's/.*Location: //p' | tr -d '\\r')
+
+if [ -z "\$LOCATION" ]; then
+    echo "Error: Could not extract redirect URL."
+    exit 1
+fi
+
+echo "Extracted Redirect URL: \$LOCATION"
+
+# Extract Query Parameters using POSIX sed
+QUERY_STRING=$(echo "\$LOCATION" | sed -n 's/.*\\?\\(.*\\)/\\1/p')
+
+# The portal uses a session/resume API based on the JS logic
+# Base URL is guest7.ic.peplink.com
+API_BASE="https://guest7.ic.peplink.com/cp"
+
+echo "Attempting to resume session via API..."
+SESSION_RESPONSE=$(curl -v -A "\$UA" "\$API_BASE/session/resume?\$QUERY_STRING" -c /tmp/cookies.txt)
+echo "API Response: \$SESSION_RESPONSE"
+
+# Proceed to login command as per JS logic
+echo "Submitting login command..."
+LOGIN_URL="\$API_BASE/login?\$QUERY_STRING&command=login&resume=true"
+curl -v -A "\$UA" -b /tmp/cookies.txt "\$LOGIN_URL"
+
+# Final Connectivity Check
+echo "Verifying connectivity..."
+ping -c 3 8.8.8.8 >/dev/null && echo "Login Successful!" && exit 0 || exit 1
