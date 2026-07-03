@@ -42,6 +42,7 @@ get_val() {
     grep -i "name="$1"" /tmp/login_page.html | sed -n 's/.*value="\([^"]*\)".*/\1/p' | head -n 1
 }
 
+# Extracting all required fields dynamically
 CHALLENGE=$(get_val "challenge")
 UAMIP=$(get_val "uamip")
 UAMPORT=$(get_val "uamport")
@@ -49,23 +50,24 @@ USERURL=$(get_val "userurl")
 NASID=$(get_val "nasid")
 LL=$(get_val "ll")
 CUSTOM=$(get_val "custom")
-MYLOGIN=$(get_val "myLogin")
+MYLOGIN="agb"
 
-echo "Submitting terms acceptance..." | tee -a "$LOG_FILE"
-curl -L -v -A "$USER_AGENT" \
+echo "Submitting terms acceptance via POST..." | tee -a "$LOG_FILE"
+# Based on the form analysis, we must POST to /auth/login.php with the specific checkbox field
+curl -v -A "$USER_AGENT" \
     -b /tmp/cookies.txt -c /tmp/cookies.txt \
-    --data-urlencode "haveTerms=1" \
-    --data-urlencode "termsOK=on" \
-    --data-urlencode "challenge=$CHALLENGE" \
-    --data-urlencode "uamip=$UAMIP" \
-    --data-urlencode "uamport=$UAMPORT" \
-    --data-urlencode "userurl=$USERURL" \
-    --data-urlencode "myLogin=$MYLOGIN" \
-    --data-urlencode "ll=$LL" \
-    --data-urlencode "nasid=$NASID" \
-    --data-urlencode "custom=$CUSTOM" \
-    --data-urlencode "button=kostenlos einloggen" \
-    "https://www.hotsplots.de/auth/login.php?$QUERY_STRING" 2>&1 | tee -a "$LOG_FILE"
+    -d "haveTerms=1" \
+    -d "termsOK=on" \
+    -d "challenge=$CHALLENGE" \
+    -d "uamip=$UAMIP" \
+    -d "uamport=$UAMPORT" \
+    -d "userurl=$USERURL" \
+    -d "myLogin=$MYLOGIN" \
+    -d "ll=$LL" \
+    -d "nasid=$NASID" \
+    -d "custom=$CUSTOM" \
+    -d "button=kostenlos+einloggen" \
+    "https://www.hotsplots.de/auth/login.php" 2>&1 | tee -a "$LOG_FILE"
 
 echo "Performing final connectivity check..." | tee -a "$LOG_FILE"
 sleep 5
