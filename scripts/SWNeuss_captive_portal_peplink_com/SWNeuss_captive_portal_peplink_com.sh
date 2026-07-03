@@ -12,28 +12,28 @@ done
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 # 2. Extract Session/Resume Data
-echo "Fetching initial parameters..." | tee -a "$LOG_FILE"
+echo "Fetching initial redirect..." | tee -a "$LOG_FILE"
 REDIRECT_RESP=$(curl -v -A "$USER_AGENT" -c /tmp/cookies.txt http://detectportal.firefox.com/success.txt 2>&1)
-REDIRECT_URL=$(echo "$REDIRECT_RESP" | sed -n 's/.*Location: //p' | tr -d '\\r')
+REDIRECT_URL=$(echo "$REDIRECT_RESP" | sed -n 's/.*Location: //p' | tr -d '\r')
 QUERY_STRING=$(echo "$REDIRECT_URL" | cut -d'?' -f2)
-echo "Query String extracted: $QUERY_STRING" | tee -a "$LOG_FILE"
+echo "Query String: $QUERY_STRING" | tee -a "$LOG_FILE"
 
-# 3. Attempt API Resume
+# 3. Resume Session
 echo "Querying session/resume API..." | tee -a "$LOG_FILE"
 API_URL="https://guest7.ic.peplink.com/cp/session/resume?$QUERY_STRING"
 API_RESPONSE=$(curl -v -A "$USER_AGENT" -b /tmp/cookies.txt -c /tmp/cookies.txt "$API_URL")
 echo "API Response: $API_RESPONSE" | tee -a "$LOG_FILE"
 
 # 4. Handle Login Logic
-# Based on analysis, we must trigger the login command. Peplink portals often require a POST or GET request to the /cp/login endpoint.
+# The JS indicates we need to hit the /cp/login endpoint with a command=login argument if not already authenticated
 echo "Sending login command..." | tee -a "$LOG_FILE"
 LOGIN_URL="https://guest7.ic.peplink.com/cp/login?$QUERY_STRING&command=login"
 FINAL_RESPONSE=$(curl -v -L -A "$USER_AGENT" -b /tmp/cookies.txt -c /tmp/cookies.txt "$LOGIN_URL")
 echo "Final Action Log: $FINAL_RESPONSE" | tee -a "$LOG_FILE"
 
-# 5. Smart Wait (90 seconds required by portal hint)
-echo "Waiting 90 seconds for session activation..." | tee -a "$LOG_FILE"
-sleep 90
+# 5. Smart Wait
+echo "Waiting for session activation..." | tee -a "$LOG_FILE"
+sleep 20
 
 # 6. Verify
 echo "Checking internet connectivity..." | tee -a "$LOG_FILE"
