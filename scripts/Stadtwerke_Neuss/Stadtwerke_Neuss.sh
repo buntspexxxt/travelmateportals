@@ -13,33 +13,36 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Fetching initial portal page to extract hidden fields..." | tee -a "$LOG_FILE"
-HTML=$(curl -v -A "$USER_AGENT" -c "$COOKIE_FILE" "http://www.google.com/" 2>&1)
-LOCATION=$(echo "$HTML" | sed -n 's/.*Location: \(.*\)/\1/p' | tr -d '\\r')
+echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
+RESPONSE=$(curl -v -A "$USER_AGENT" -c "$COOKIE_FILE" "http://neverssl.com" 2>&1)
+LOCATION=$(echo "$RESPONSE" | sed -n 's/.*Location: \(.*\)/\1/p' | tr -d '\r')
 
 if [ -z "$LOCATION" ]; then
-    echo "No redirect found. Already logged in or network error."
+    echo "Already logged in or no redirect detected." | tee -a "$LOG_FILE"
     exit 0
 fi
 
-echo "Redirecting to: $LOCATION"
-PORTAL_PAGE=$(curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$LOCATION")
+echo "Accessing portal: $LOCATION" | tee -a "$LOG_FILE"
+HTML=$(curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$LOCATION")
 
-echo "Extracting dynamic form parameters..."
-CHALLENGE=$(echo "$PORTAL_PAGE" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p')
-UAMIP=$(echo "$PORTAL_PAGE" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p')
-UAMPORT=$(echo "$PORTAL_PAGE" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p')
-USERURL=$(echo "$PORTAL_PAGE" | sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p')
-NASID=$(echo "$PORTAL_PAGE" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p')
+echo "Extracting dynamic form parameters..." | tee -a "$LOG_FILE"
+CHALLENGE=$(echo "$HTML" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p')
+UAMIP=$(echo "$HTML" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p')
+UAMPORT=$(echo "$HTML" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p')
+USERURL=$(echo "$HTML" | sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p')
+NASID=$(echo "$HTML" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p')
 
 if [ -z "$CHALLENGE" ]; then
-    echo "Failed to extract challenge. Portal structure might have changed." | tee -a "$LOG_FILE"
+    echo "Error: Could not extract form parameters." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Submitting login request..."
+echo "Submitting terms acceptance..." | tee -a "$LOG_FILE"
+# The form requires 'termsOK' to be present to pass the checkCheckBox JS validation
 POST_DATA="haveTerms=1&termsOK=on&button=kostenlos+einloggen&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&userurl=$USERURL&myLogin=agb&ll=de&nasid=$NASID&custom=1"
-RESPONSE=$(curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -d "$POST_DATA" "https://www.hotsplots.de/auth/login.php")
 
-echo "Verifying connectivity..."
-ping -c 3 8.8.8.8 >/dev/null && (echo "Login successful!" && exit 0) || (echo "Login failed or no internet access." && exit 1)
+AUTH_RESPONSE=$(curl -v -A "$USER_AGENT" -b "$COOKIE_FILE" -d "$POST_DATA" "https://www.hotsplots.de/auth/login.php")
+echo "HTTP Response Received." | tee -a "$LOG_FILE"
+
+echo "Verifying connectivity..." | tee -a "$LOG_FILE"
+ping -c 3 8.8.8.8 >/dev/null && (echo "Login successful!" | tee -a "$LOG_FILE" && exit 0) || (echo "Login failed or no internet access." | tee -a "$LOG_FILE" && exit 1)
