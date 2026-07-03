@@ -19,21 +19,14 @@ rm -f /tmp/cookies.txt /tmp/login_page.html
 
 echo "Triggering portal redirect..." | tee -a "$LOG_FILE"
 REDIRECT_RESPONSE=$(curl -v -A "$USER_AGENT" -c /tmp/cookies.txt "http://neverssl.com" 2>&1)
-REDIRECT_URL=$(echo "$REDIRECT_RESPONSE" | sed -n 's/.*[Ll]ocation: \([^ ]*\).*/\1/p' | tr -d '\r' | head -n 1)
+REDIRECT_URL=$(echo "$REDIRECT_RESPONSE" | sed -n 's/.*[Ll]ocation: //p' | tr -d '\r' | head -n 1)
 
 if [ -z "$REDIRECT_URL" ]; then
-    echo "Primary redirect detection failed, retrying..." | tee -a "$LOG_FILE"
-    REDIRECT_RESPONSE=$(curl -v -A "$USER_AGENT" -c /tmp/cookies.txt "http://detectportal.firefox.com/success.txt" 2>&1)
-    REDIRECT_URL=$(echo "$REDIRECT_RESPONSE" | sed -n 's/.*[Ll]ocation: \([^ ]*\).*/\1/p' | tr -d '\r' | head -n 1)
-fi
-
-if [ -z "$REDIRECT_URL" ]; then
-    echo "CRITICAL: Could not detect captive portal redirect URL." | tee -a "$LOG_FILE"
+    echo "Primary redirect detection failed. Exiting." | tee -a "$LOG_FILE"
     exit 1
 fi
 
 echo "Redirect URL: $REDIRECT_URL" | tee -a "$LOG_FILE"
-QUERY_STRING=$(echo "$REDIRECT_URL" | cut -d'?' -f2)
 
 echo "Fetching login page..." | tee -a "$LOG_FILE"
 curl -v -A "$USER_AGENT" -b /tmp/cookies.txt -c /tmp/cookies.txt "$REDIRECT_URL" > /tmp/login_page.html
@@ -50,10 +43,9 @@ USERURL=$(get_val "userurl")
 NASID=$(get_val "nasid")
 LL=$(get_val "ll")
 CUSTOM=$(get_val "custom")
-MYLOGIN="agb"
 
 echo "Submitting terms acceptance via POST..." | tee -a "$LOG_FILE"
-# Based on the form analysis, we must POST to /auth/login.php with the specific checkbox field
+# The form requires termsOK=on to pass the validation logic
 curl -v -A "$USER_AGENT" \
     -b /tmp/cookies.txt -c /tmp/cookies.txt \
     -d "haveTerms=1" \
@@ -62,7 +54,7 @@ curl -v -A "$USER_AGENT" \
     -d "uamip=$UAMIP" \
     -d "uamport=$UAMPORT" \
     -d "userurl=$USERURL" \
-    -d "myLogin=$MYLOGIN" \
+    -d "myLogin=agb" \
     -d "ll=$LL" \
     -d "nasid=$NASID" \
     -d "custom=$CUSTOM" \
