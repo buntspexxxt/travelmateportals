@@ -20,10 +20,9 @@ COOKIE_JAR="/tmp/wifi_cookies.txt"
 # 2. Get initial page to set session
 echo "Initial request to platform..." | tee -a "$LOG_FILE"
 PAGE_HTML=$(curl -v -A "$USER_AGENT" -c "$COOKIE_JAR" -L "https://service.thecloud.eu/service-platform/home" 2>&1)
-echo "Page retrieved. Looking for 'Get Online' link..." | tee -a "$LOG_FILE"
 
 # 3. Extract the 'Get Online' URL dynamically
-# Pattern: href='https://service.thecloud.eu/service-platform/url/XXXXX'
+# The portal requires hitting the specific URL path for the 'Get Online' link found in the HTML
 GET_ONLINE_URL=$(echo "$PAGE_HTML" | sed -n 's/.*href="\([^"]*\/service-platform\/url\/[0-9]\+\)".*/\1/p' | head -1)
 
 if [ -z "$GET_ONLINE_URL" ]; then
@@ -34,12 +33,14 @@ fi
 echo "Navigating to activation link: $GET_ONLINE_URL" | tee -a "$LOG_FILE"
 
 # 4. Perform the activation
-# This follows the specific URL which sets the session to authenticated
+# We follow the redirect to the final authorization page
 RESULT=$(curl -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -L "$GET_ONLINE_URL" 2>&1)
 
-echo "Activation request complete. Checking connectivity..." | tee -a "$LOG_FILE"
+# 5. Check if we need to interact with the second stage (Terms/Acceptance)
+# The portal structure suggests the final authentication is finalized after this request.
+echo "Verifying internet access..." | tee -a "$LOG_FILE"
 
-# 5. Connectivity check
+# 6. Connectivity check
 ping -c 3 8.8.8.8 >/dev/null && {
     echo "Login successful!" | tee -a "$LOG_FILE"
     exit 0
