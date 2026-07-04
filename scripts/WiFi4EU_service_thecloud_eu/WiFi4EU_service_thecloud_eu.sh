@@ -1,7 +1,7 @@
 #!/bin/bash
 
 LOG_FILE="/tmp/portal_login.log"
-echo "Starting WiFi4EU login process..." | tee -a "$LOG_FILE"
+echo "Starting WiFi4EU multi-stage login process..." | tee -a "$LOG_FILE"
 
 # 1. Wait for DHCP
 echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
@@ -19,10 +19,11 @@ COOKIE_JAR="/tmp/wifi_cookies.txt"
 
 # 2. Get initial page to set session
 echo "Initial request to platform..." | tee -a "$LOG_FILE"
-PAGE_HTML=$(curl -v -A "$USER_AGENT" -c "$COOKIE_JAR" -L "https://service.thecloud.eu/service-platform/home" 2>&1)
+curl -v -A "$USER_AGENT" -c "$COOKIE_JAR" -L "https://service.thecloud.eu/service-platform/home" 2>&1 | tee -a "$LOG_FILE"
 
 # 3. Extract the 'Get Online' URL dynamically
-# The portal requires hitting the specific URL path for the 'Get Online' link found in the HTML
+# We fetch the HTML content again to ensure we have the correct current session context
+PAGE_HTML=$(curl -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -L "https://service.thecloud.eu/service-platform/home")
 GET_ONLINE_URL=$(echo "$PAGE_HTML" | sed -n 's/.*href="\([^"]*\/service-platform\/url\/[0-9]\+\)".*/\1/p' | head -1)
 
 if [ -z "$GET_ONLINE_URL" ]; then
@@ -32,13 +33,15 @@ fi
 
 echo "Navigating to activation link: $GET_ONLINE_URL" | tee -a "$LOG_FILE"
 
-# 4. Perform the activation
-# We follow the redirect to the final authorization page
+# 4. Perform the first activation stage
 RESULT=$(curl -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -L "$GET_ONLINE_URL" 2>&1)
+echo "HTTP Response from activation: $RESULT" | tee -a "$LOG_FILE"
 
-# 5. Check if we need to interact with the second stage (Terms/Acceptance)
-# The portal structure suggests the final authentication is finalized after this request.
-echo "Verifying internet access..." | tee -a "$LOG_FILE"
+# 5. Handle second stage (The Cloud Portal Redirect)
+# Check for any further redirection or secondary forms if necessary
+# Often requires fetching the specific landing target URL again to commit the session
+echo "Finalizing connection..." | tee -a "$LOG_FILE"
+curl -v -A "$USER_AGENT" -b "$COOKIE_JAR" -L "https://service.thecloud.eu/service-platform/home" 2>&1 | tee -a "$LOG_FILE"
 
 # 6. Connectivity check
 ping -c 3 8.8.8.8 >/dev/null && {
