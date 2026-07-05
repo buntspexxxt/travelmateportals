@@ -31,16 +31,20 @@ RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
      -d "button=Login&UserName=&Password=&FNAME=0")
 echo "HTTP Response: $RESPONSE" | tee -a "$LOG_FILE"
 
-# 4. Final activation payload for ECOM3
+# 4. Final activation payload
 echo "Submitting final JSON activation..." | tee -a "$LOG_FILE"
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
      -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
      -H "Content-Type: application/json" \
      -d '{"rememberMe":true}' | tee -a "$LOG_FILE"
 
-# 5. Final Connectivity Check
+# 5. ECOM3 SPA Handshake
+echo "Performing ECOM3 SPA handshake..." | tee -a "$LOG_FILE"
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X GET "https://hotspot.t-mobile.net/wlan/rest/init" >> "$LOG_FILE" 2>&1
+
+# 6. Final Connectivity Check
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
-CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
     exit 0
