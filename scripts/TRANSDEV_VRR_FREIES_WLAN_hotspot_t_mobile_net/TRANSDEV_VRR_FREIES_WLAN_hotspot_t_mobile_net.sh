@@ -1,6 +1,6 @@
 #!/bin/bash
 
-trap 'rm -f "${COOKIE_JAR:-}" "${HTML_FILE:-}"' EXIT
+trap 'rm -f "${COOKIE_JAR:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_JAR="/tmp/telekom_cookies.txt"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -23,24 +23,24 @@ rm -f "$COOKIE_JAR"
 echo "Initializing session..." | tee -a "$LOG_FILE"
 curl -k -A "$USER_AGENT" -c "$COOKIE_JAR" -b "$COOKIE_JAR" "http://neverssl.com" > /dev/null 2>&1
 
-# 3. Post to freeLogin (The standard T-Mobile Hotspot API endpoint)
-echo "Submitting initial login request..." | tee -a "$LOG_FILE"
+# 3. Handle ECOM3 stateful transition (Free Login)
+echo "Submitting ECOM3 free login request..." | tee -a "$LOG_FILE"
 RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
      -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
      -H "Content-Type: application/x-www-form-urlencoded" \
      -d "button=Login&UserName=&Password=&FNAME=0")
 echo "HTTP Response: $RESPONSE" | tee -a "$LOG_FILE"
 
-# 4. Handle secondary payload if the portal is in stateful ECOM3
+# 4. Final activation payload for ECOM3
 echo "Submitting final JSON activation..." | tee -a "$LOG_FILE"
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
      -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
      -H "Content-Type: application/json" \
-     -d '{"rememberMe":true}' > /dev/null 2>&1
+     -d '{"rememberMe":true}' | tee -a "$LOG_FILE"
 
 # 5. Final Connectivity Check
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
-CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
     exit 0
