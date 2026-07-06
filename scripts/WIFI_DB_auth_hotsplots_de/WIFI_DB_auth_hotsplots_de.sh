@@ -14,26 +14,27 @@ for i in {1..20}; do
 done
 
 echo "Step 1: Fetching initial auth portal page..." | tee -a "$LOG_FILE"
-# Initial GET to trigger the session and parse parameters
-RESPONSE_PAGE=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L "http://neverssl.com")
+# Capture the initial redirect URL to extract parameters
+REDIRECT_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o /dev/null -w "%{url_effective}" "http://neverssl.com" 2>&1 | grep "Location:" | tail -n 1 | sed 's/Location: //g' | sed 's/\r//g')
 
-echo "Step 2: Parsing hidden form parameters from the current page..." | tee -a "$LOG_FILE"
+echo "Step 2: Accessing the login page to parse hidden fields..." | tee -a "$LOG_FILE"
+RESPONSE_PAGE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "$REDIRECT_URL")
+
 CHALLENGE=$(echo "$RESPONSE_PAGE" | sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p')
 UAMIP=$(echo "$RESPONSE_PAGE" | sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p')
 UAMPORT=$(echo "$RESPONSE_PAGE" | sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p')
 TOKEN=$(echo "$RESPONSE_PAGE" | sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p')
 
 if [ -z "$TOKEN" ]; then
-    echo "ERROR: Failed to parse required tokens from the portal page." | tee -a "$LOG_FILE"
+    echo "ERROR: Failed to parse tokens. Check HTML structure." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Step 3: Submitting login form (accepting terms)..." | tee -a "$LOG_FILE"
-# Constructing POST payload. Hotsplots requires standard field names as observed in the HTML form.
+echo "Step 3: Submitting login POST request..." | tee -a "$LOG_FILE"
 POST_DATA="login_status_form%5Bbutton%5D=Jetzt+kostenlos+surfen&login_status_form%5Bchallenge%5D=$CHALLENGE&login_status_form%5Buamip%5D=$UAMIP&login_status_form%5Buamport%5D=$UAMPORT&login_status_form%5Bll%5D=&login_status_form%5BmyLogin%5D=&login_status_form%5B_token%5D=$TOKEN"
 
-# The form POSTs to the current location
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" -L "https://auth.hotsplots.de/login" | tee -a "$LOG_FILE"
+# POST to the same URL or the action URL found in the form
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" "$REDIRECT_URL" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
