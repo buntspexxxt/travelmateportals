@@ -18,25 +18,26 @@ done
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 COOKIE_FILE="/tmp/cookies_captive_portal.txt"
 
-echo "Step 1: Accessing initial portal..."
+echo "Step 1: Accessing initial portal to fetch tokens..."
 curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -o /tmp/index.html "https://469.rdr.conn4.com/"
 
-echo "Step 2: Extracting Token..."
+echo "Step 2: Extracting WBS Token..."
 WBS_TOKEN=$(sed -n 's/.*conn4.hotspot.wbsToken = \({"token":"[^"]*","urls":{[^}]*}\});.*/\1/p' /tmp/index.html | sed 's/.*"token":"\([^"]*\)".*/\1/')
 if [ -z "$WBS_TOKEN" ]; then echo "Failed to extract token"; exit 1; fi
-echo "Token found."
+echo "Token successfully extracted."
 
 echo "Step 3: Initializing session via POST..."
-# This step requests the connection, usually triggers the second stage page
+# We POST the token back to the gateway to signal our desire to connect
 RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://469.rdr.conn4.com/wbs/de/roaming/return/" -d "token=$WBS_TOKEN")
+echo "HTTP Response from session init: $RESPONSE"
 
-echo "Step 4: Accepting Terms (AGB) via Scene Loader..."
-# The logs show a scene-loader-init. The hint suggests AGB acceptance.
-# We must send the campaign/view event to clear the modal/popup.
-# The scene template is at /scenes/agbRwik_7LwIN_lF/ (from HTML data)
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -X POST "https://469.rdr.conn4.com/scenes/agbRwik_7LwIN_lF/" -d "action=accept&terms=1"
+echo "Step 4: Executing Scene Accept event..."
+# Based on the JS schedule, the scene 'agbRwik_7LwIN_lF' is loaded as the main interactive event
+# We simulate the acceptance of the terms which triggers final network opening
+ACCEPT_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -X POST "https://469.rdr.conn4.com/scenes/agbRwik_7LwIN_lF/" -d "action=accept&terms=1")
+echo "HTTP Response from acceptance: $ACCEPT_RESPONSE"
 
-echo "Step 5: Verifying real Internet connectivity..."
+echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!"
