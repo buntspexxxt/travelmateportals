@@ -13,13 +13,11 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Step 1: Initiating connection to trigger portal..." | tee -a "$LOG_FILE"
-# Fetch the portal redirect URL
-REDIRECT_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -s -o /dev/null -w "%\{url_effective\}" "http://neverssl.com")
-echo "Captured Redirect URL: $REDIRECT_URL" | tee -a "$LOG_FILE"
+echo "Step 1: Fetching initial redirect to get Session Cookies and target..." | tee -a "$LOG_FILE"
+TARGET_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -s -o /dev/null -w "%{url_effective}" "http://neverssl.com")
 
-echo "Step 2: Fetching portal HTML for form extraction..." | tee -a "$LOG_FILE"
-HTML=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "$REDIRECT_URL")
+echo "Step 2: Downloading portal HTML to extract dynamic form fields..." | tee -a "$LOG_FILE"
+HTML=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "$TARGET_URL")
 echo "$HTML" > /tmp/portal.html
 
 CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
@@ -27,23 +25,20 @@ UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' 
 UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
 TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
 
-echo "Extracted Challenge: $CHALLENGE" | tee -a "$LOG_FILE"
-echo "Extracted Token: $TOKEN" | tee -a "$LOG_FILE"
-
 if [ -z "$TOKEN" ]; then
-    echo "ERROR: Failed to extract tokens. Exiting." | tee -a "$LOG_FILE"
+    echo "ERROR: Could not find hidden tokens. Ensure we are at the correct portal page." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Step 3: Submitting login form..." | tee -a "$LOG_FILE"
+echo "Step 3: Submitting acceptance form..." | tee -a "$LOG_FILE"
+# Using URL-encoded form data as observed in Hotsplots structure
 POST_DATA="login_status_form%5Bbutton%5D=Jetzt+kostenlos+surfen&login_status_form%5Bchallenge%5D=$CHALLENGE&login_status_form%5Buamip%5D=$UAMIP&login_status_form%5Buamport%5D=$UAMPORT&login_status_form%5Bll%5D=&login_status_form%5BmyLogin%5D=&login_status_form%5B_token%5D=$TOKEN"
 
-# Perform the POST request to the redirect URL path (usually the same page)
-SUBMIT_STATUS=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" -L -s -o /dev/null -w "%\{http_code\}" "$REDIRECT_URL")
+SUBMIT_STATUS=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" -L -w "%{http_code}" -o /dev/null "$TARGET_URL")
 echo "Submission HTTP Code: $SUBMIT_STATUS" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..."
-CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!"
     exit 0
