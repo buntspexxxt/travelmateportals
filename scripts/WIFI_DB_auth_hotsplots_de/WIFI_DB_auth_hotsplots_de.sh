@@ -13,28 +13,29 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Step 1: Fetching initial portal redirect..." | tee -a "$LOG_FILE"
-INITIAL_RESPONSE=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -w "%{url_effective}" -o /dev/null "http://neverssl.com")
+echo "Step 1: Initiating Hotspot authentication..." | tee -a "$LOG_FILE"
+# Fetch the landing page and keep track of the URL/cookies
+curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o /tmp/portal.html "http://neverssl.com" | tee -a "$LOG_FILE"
 
-echo "Step 2: Downloading portal HTML to extract dynamic fields..." | tee -a "$LOG_FILE"
-HTML=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "$INITIAL_RESPONSE")
-echo "$HTML" > /tmp/portal.html
-
-echo "Extracting hidden inputs from HTML..." | tee -a "$LOG_FILE"
-CHALLENGE=$(sed -n 's/.*name="login_status_form\\[challenge\\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
-UAMIP=$(sed -n 's/.*name="login_status_form\\[uamip\\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
-UAMPORT=$(sed -n 's/.*name="login_status_form\\[uamport\\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
-TOKEN=$(sed -n 's/.*name="login_status_form\\[_token\\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
+echo "Step 2: Parsing authentication parameters..." | tee -a "$LOG_FILE"
+# Extract dynamic tokens from the form using POSIX sed
+CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
+UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
+UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
+TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
 
 if [ -z "$TOKEN" ]; then
-    echo "ERROR: Could not find login tokens. Portal structure might have changed." | tee -a "$LOG_FILE"
+    echo "ERROR: Could not extract dynamic tokens. Check portal layout." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Step 3: Submitting login form..." | tee -a "$LOG_FILE"
+echo "Step 3: Submitting acceptance form..." | tee -a "$LOG_FILE"
+# Construct the POST data for the Hotspot login
+# Note: The form action is relative; we use the current host (auth.hotsplots.de) via the captured base URL context
 POST_DATA="login_status_form%5Bbutton%5D=Jetzt+kostenlos+surfen&login_status_form%5Bchallenge%5D=$CHALLENGE&login_status_form%5Buamip%5D=$UAMIP&login_status_form%5Buamport%5D=$UAMPORT&login_status_form%5Bll%5D=&login_status_form%5BmyLogin%5D=&login_status_form%5B_token%5D=$TOKEN"
 
-SUBMIT_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" -L -w "%{http_code}" -o /dev/null "$INITIAL_RESPONSE")
+# Submit the form to the authentication endpoint
+SUBMIT_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -d "$POST_DATA" -L -w "%{http_code}" -o /dev/null "https://auth.hotsplots.de/login")
 echo "Submission HTTP Code: $SUBMIT_RESPONSE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..."
