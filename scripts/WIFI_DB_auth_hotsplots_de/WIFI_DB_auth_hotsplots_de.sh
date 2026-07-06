@@ -15,17 +15,17 @@ done
 
 echo "Step 1: Fetching initial redirect to identify portal..." | tee -a "$LOG_FILE"
 # We use -L to follow redirects but capture the last URL
-REDIRECT_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -s -o /dev/null -w "%{url_effective}" "http://neverssl.com")
+REDIRECT_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -s -o /dev/null -w "%{{url_effective}}" "http://neverssl.com")
 echo "Redirected to: $REDIRECT_URL" | tee -a "$LOG_FILE"
 
 echo "Step 2: Fetching portal HTML to extract dynamic tokens..." | tee -a "$LOG_FILE"
 HTML=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "$REDIRECT_URL")
 echo "$HTML" > /tmp/portal.html
 
-CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
-UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
-UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
-TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
+CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"\\]*\)".*/\1/p' /tmp/portal.html)
+UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"\\]*\)".*/\1/p' /tmp/portal.html)
+UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"\\]*\)".*/\1/p' /tmp/portal.html)
+TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"\\]*\)".*/\1/p' /tmp/portal.html)
 
 echo "Tokens extracted: Challenge=$CHALLENGE, UAMIP=$UAMIP, Token=$TOKEN" | tee -a "$LOG_FILE"
 
@@ -38,10 +38,22 @@ echo "Step 3: Submitting acceptance POST request..." | tee -a "$LOG_FILE"
 POST_DATA="login_status_form%5Bbutton%5D=Jetzt+kostenlos+surfen&login_status_form%5Bchallenge%5D=$CHALLENGE&login_status_form%5Buamip%5D=$UAMIP&login_status_form%5Buamport%5D=$UAMPORT&login_status_form%5Bll%5D=&login_status_form%5BmyLogin%5D=&login_status_form%5B_token%5D=$TOKEN"
 
 SUBMIT_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" -L "$REDIRECT_URL" 2>&1)
-echo "Submission response code received." | tee -a "$LOG_FILE"
+echo "Submission response: $SUBMIT_RESPONSE" | tee -a "$LOG_FILE"
+
+# After the first submission, the portal redirects to a page that generates a new URL dynamically
+echo "Step 4: Following redirect from the initial submission..." | tee -a "$LOG_FILE"
+FOLLOWUP_URL=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -s -o /dev/null -w "%{{url_effective}}" -d "$POST_DATA" "$REDIRECT_URL")
+echo "Follow-up URL: $FOLLOWUP_URL" | tee -a "$LOG_FILE"
+
+if [[ "$FOLLOWUP_URL" == "*neverssl.com/online" ]]; then
+    echo "Step 5: Successfully redirected to the final 'online' page." | tee -a "$LOG_FILE"
+else
+    echo "ERROR: Did not reach the final 'online' page. Current URL: $FOLLOWUP_URL" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
 echo "Verifying real Internet connectivity..."
-CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%{{http_code}}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!"
     exit 0
