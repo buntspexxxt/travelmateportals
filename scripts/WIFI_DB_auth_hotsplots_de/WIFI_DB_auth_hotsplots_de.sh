@@ -13,29 +13,30 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Step 1: Fetching initial redirect to get Session Cookies and target..." | tee -a "$LOG_FILE"
-TARGET_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -s -o /dev/null -w "%{url_effective}" "http://neverssl.com")
+echo "Step 1: Fetching initial portal redirect..." | tee -a "$LOG_FILE"
+# Follow redirect to get the actual login URL that contains the parameters
+START_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -s -o /dev/null -w "%{url_effective}" "http://neverssl.com")
 
-echo "Step 2: Downloading portal HTML to extract dynamic form fields..." | tee -a "$LOG_FILE"
-HTML=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "$TARGET_URL")
+echo "Step 2: Downloading portal HTML to extract dynamic fields..." | tee -a "$LOG_FILE"
+HTML=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "$START_URL")
 echo "$HTML" > /tmp/portal.html
 
+echo "Extracting hidden inputs from HTML..." | tee -a "$LOG_FILE"
 CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
 UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
 UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
 TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' /tmp/portal.html)
 
 if [ -z "$TOKEN" ]; then
-    echo "ERROR: Could not find hidden tokens. Ensure we are at the correct portal page." | tee -a "$LOG_FILE"
+    echo "ERROR: Could not find login tokens. Portal structure might have changed." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Step 3: Submitting acceptance form..." | tee -a "$LOG_FILE"
-# Using URL-encoded form data as observed in Hotsplots structure
+echo "Step 3: Submitting login form..." | tee -a "$LOG_FILE"
 POST_DATA="login_status_form%5Bbutton%5D=Jetzt+kostenlos+surfen&login_status_form%5Bchallenge%5D=$CHALLENGE&login_status_form%5Buamip%5D=$UAMIP&login_status_form%5Buamport%5D=$UAMPORT&login_status_form%5Bll%5D=&login_status_form%5BmyLogin%5D=&login_status_form%5B_token%5D=$TOKEN"
 
-SUBMIT_STATUS=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" -L -w "%{http_code}" -o /dev/null "$TARGET_URL")
-echo "Submission HTTP Code: $SUBMIT_STATUS" | tee -a "$LOG_FILE"
+SUBMIT_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" -L -w "%{http_code}" -o /dev/null "$START_URL")
+echo "Submission HTTP Code: $SUBMIT_RESPONSE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
