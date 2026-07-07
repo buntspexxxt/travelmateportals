@@ -1,9 +1,7 @@
 #!/bin/bash
-
-# Auto-injected cleanup trap for temporary session files
-trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 # SCRIPT_VERSION="1.0.0"
 
+trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 echo "Starting portal login sequence..." | tee -a "$LOG_FILE"
 
@@ -18,21 +16,19 @@ for i in {1..20}; do
 done
 
 COOKIE_FILE=$(mktemp)
-echo "Using cookie file: $COOKIE_FILE" | tee -a "$LOG_FILE"
-
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-echo "Fetching portal page..." | tee -a "$LOG_FILE"
-HTML=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" "https://public.hotspot.koeln/cp/guqs6n9d")
+echo "Fetching initial landing page..." | tee -a "$LOG_FILE"
+curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -o /dev/null -s "https://public.hotspot.koeln/cp/guqs6n9d"
 
-# The portal has a form with action='/login' and a hidden input 'login' with value 'oneclick'.
-# It requires checking a box, but we can bypass it by just POSTing the required data.
-echo "Submitting login form..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \\
-  -d "login=oneclick" \\
-  "https://public.hotspot.koeln/login")
+echo "Submitting login form with checkbox agreement..." | tee -a "$LOG_FILE"
+# The portal requires accepting terms. Submitting 'login=oneclick' with checkbox checked.
+RESPONSE_CODE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
+  -d "login=oneclick" \
+  -d "customControlValidation1=on" \
+  -o /dev/null -w "%{http_code}" "https://public.hotspot.koeln/login")
 
-echo "HTTP Response: $RESPONSE" | tee -a "$LOG_FILE"
+echo "HTTP Response Code: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
