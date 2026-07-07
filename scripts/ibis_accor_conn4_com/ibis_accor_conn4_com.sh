@@ -1,8 +1,6 @@
 #!/bin/bash
-
-# Auto-injected cleanup trap for temporary session files
-trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 # SCRIPT_VERSION="1.0.0"
+trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 COOKIE_JAR="/tmp/ibis_cookies.txt"
@@ -18,9 +16,7 @@ for i in {1..20}; do
 done
 
 rm -f "$COOKIE_JAR"
-
-# Trigger initial flow
-echo "Triggering portal flow..." | tee -a "$LOG_FILE"
+echo "Fetching landing page..." | tee -a "$LOG_FILE"
 REDIRECT_INFO=$(curl -v -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "http://neverssl.com" 2>&1)
 PORTAL_URL=$(echo "$REDIRECT_INFO" | sed -n 's/.*[Ll]ocation: //p' | sed 's/\r//g' | head -n 1)
 [ -z "$PORTAL_URL" ] && PORTAL_URL="https://accor.conn4.com/"
@@ -30,17 +26,15 @@ HTML_BODY=$(curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "$PORTAL_
 SCENE_PLAYER_URI=$(echo "$HTML_BODY" | sed -n 's/.*"scenePlayerUri":"\([^"\\]*\)".*/\1/p')
 SCENE_PLAYER_URL="https://accor.conn4.com${SCENE_PLAYER_URI}"
 
+echo "Fetching player data..." | tee -a "$LOG_FILE"
 PLAYER_BODY=$(curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "$SCENE_PLAYER_URL")
-TOKEN=$(echo "$PLAYER_BODY" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
-SCENE_ID=$(echo "$PLAYER_BODY" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
+TOKEN=$(echo "$PLAYER_BODY" | sed -n 's/.*"token":"\([^" ]*\)".*/\1/p')
 
 echo "Creating session..." | tee -a "$LOG_FILE"
-SESSION_RESPONSE=$(curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" -X POST -d "session_id=&with-tariffs=1&locale=de_DE&authorization=token%3D${TOKEN}" "https://accor.conn4.com/wbs/api/v1/create-session/")
-SESSION_ID=$(echo "$SESSION_RESPONSE" | sed -n 's/.*"session":"\([^"]*\)".*/\1/p')
+SESSION_RESPONSE=$(curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" -X POST -d "authorization=token%3D${TOKEN}" "https://accor.conn4.com/wbs/api/v1/create-session/")
+SESSION_ID=$(echo "$SESSION_RESPONSE" | sed -n 's/.*"session":"\([^" ]*\)".*/\1/p')
 
-echo "Registering free access..." | tee -a "$LOG_FILE"
-# Using registration_type=free-wifi or generic terms-only based on the hint: "24-Stunden-Pass"
-# The portal expects standard free registration.
+echo "Finalizing registration..." | tee -a "$LOG_FILE"
 curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" -X POST -d "authorization=session%3D${SESSION_ID}&registration_type=terms-only&registration%5Bterms%5D=1" "https://accor.conn4.com/wbs/api/v1/register/free/"
 
 echo "Verifying real Internet connectivity..."
