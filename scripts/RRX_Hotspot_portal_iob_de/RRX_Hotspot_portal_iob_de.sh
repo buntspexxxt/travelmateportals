@@ -21,8 +21,8 @@ echo "Fetching initial redirect..." | tee -a "$LOG_FILE"
 REDIRECT_URL=$(curl -k -v -A "$USER_AGENT" -o /dev/null -w "%{redirect_url}" http://neverssl.com 2>&1 | sed -n 's/.*Location: \(.*\)/\1/p' | sed 's/[[:space:]]*$//')
 
 if [ -z "$REDIRECT_URL" ]; then
-    echo "Could not find redirect URL. Manual check required." | tee -a "$LOG_FILE"
-    exit 1
+    echo "Could not find redirect URL. Attempting to force reach portal.iob.de..." | tee -a "$LOG_FILE"
+    REDIRECT_URL="http://portal.iob.de/"
 fi
 
 # Extract LOGIN_URL (Hotsplots auth URL) from query string
@@ -36,13 +36,15 @@ curl -k -v -A "$USER_AGENT" "http://192.168.44.1/prelogin" >> "$LOG_FILE" 2>&1
 
 # 4. Final Hotsplots Authorization (Stage 2)
 echo "Performing final auth against Hotsplots..." | tee -a "$LOG_FILE"
-# Using -d with empty fields for free open-access portal
+# We use the extracted LOGIN_URL to POST the required auth parameters
+# The portal expects to hit the Hotsplots auth endpoint after the local gateway prelogin
 AUTH_RESPONSE=$(curl -k -v -A "$USER_AGENT" -d "username=&password=&button=Login" "$LOGIN_URL" 2>&1)
-echo "Auth Response Code/Output: $AUTH_RESPONSE" | tee -a "$LOG_FILE"
+
+echo "Auth Response: $AUTH_RESPONSE" | tee -a "$LOG_FILE"
 
 # 5. Connectivity check
 echo "Verifying real Internet connectivity..."
-CHECK_CODE=$(curl -k -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!"
     exit 0
