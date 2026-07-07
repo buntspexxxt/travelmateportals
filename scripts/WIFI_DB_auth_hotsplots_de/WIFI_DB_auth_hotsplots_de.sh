@@ -24,22 +24,24 @@ UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' 
 UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$LANDING_HTML")
 TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$LANDING_HTML")
 
-echo "Extracted Tokens: Challenge=$CHALLENGE, Token=${TOKEN:0:10}..." | tee -a "$LOG_FILE"
+echo "Extracted Tokens: Challenge=$CHALLENGE" | tee -a "$LOG_FILE"
 
-echo "Step 3: Submitting login POST request..." | tee -a "$LOG_FILE"
-# Extracting the form action dynamically if present, otherwise using current base
-BASE_URL="https://auth.hotsplots.de/login"
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -X POST \
-  --data-urlencode "login_status_form[button]=" \
+echo "Step 3: Submitting acceptance POST request..." | tee -a "$LOG_FILE"
+# The portal requires a POST to the same endpoint to simulate the button click action.
+# We use the current URL (Effective URL) to identify the target path dynamically.
+EFFECTIVE_URL=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -s -I -o /dev/null -w "%{url_effective}" "http://neverssl.com")
+
+RESPONSE_CODE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -X POST \
+  --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
   --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
   --data-urlencode "login_status_form[uamip]=$UAMIP" \
   --data-urlencode "login_status_form[uamport]=$UAMPORT" \
   --data-urlencode "login_status_form[ll]=" \
   --data-urlencode "login_status_form[myLogin]=" \
   --data-urlencode "login_status_form[_token]=$TOKEN" \
-  "$BASE_URL" 2>&1)
+  "$EFFECTIVE_URL" -o /dev/null -w "%{http_code}")
 
-echo "HTTP Response Received." | tee -a "$LOG_FILE"
+echo "HTTP Response Code: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
