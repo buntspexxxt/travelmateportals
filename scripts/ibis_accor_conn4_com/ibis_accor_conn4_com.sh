@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.1.0"
+# SCRIPT_VERSION="1.2.0"
 trap 'rm -f "${COOKIE_JAR:-}" "${HTML_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -35,7 +35,7 @@ SESSION_RESPONSE=$(curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" -X
 SESSION_ID=$(echo "$SESSION_RESPONSE" | sed -n 's/.*"session":"\([^" ]*\)".*/\1/p')
 
 echo "Finalizing registration..." | tee -a "$LOG_FILE"
-# Using the session to finalize registration
+# Send terms acceptance with session
 curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" -X POST -d "authorization=session%3D${SESSION_ID}&registration_type=terms-only&registration%5Bterms%5D=1" "https://accor.conn4.com/wbs/api/v1/register/free/"
 
 echo "Verifying real Internet connectivity..."
