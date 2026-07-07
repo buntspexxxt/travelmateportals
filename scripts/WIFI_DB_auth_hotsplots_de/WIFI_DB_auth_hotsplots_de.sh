@@ -15,22 +15,20 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Fetching portal page..." | tee -a "$LOG_FILE"
-# We use -L to follow the redirect to the authentication portal
-curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "http://neverssl.com"
+echo "Fetching initial portal redirect..." | tee -a "$LOG_FILE"
+REDIRECT_RESPONSE=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "http://neverssl.com" 2>&1)
 
-echo "Extracting form parameters..." | tee -a "$LOG_FILE"
-# Extracting the target form action URL if it exists, otherwise defaulting to the current URL
-# The hotsplots portal usually posts back to the same auth URL or a specific action path
+echo "Extracting form data from HTML..." | tee -a "$LOG_FILE"
 CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 
-echo "Submitting form..." | tee -a "$LOG_FILE"
-# Post to the same URL, which is handled by the auth engine
-# Using --data-urlencode to safely pass the tokens
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
+# The form action is relative; we submit to the same host path from which the HTML was served
+AUTH_URL="https://auth.hotsplots.de/login"
+
+echo "Submitting authentication POST request..." | tee -a "$LOG_FILE"
+POST_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
   --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
   --data-urlencode "login_status_form[uamip]=$UAMIP" \
@@ -38,7 +36,9 @@ curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[ll]=" \
   --data-urlencode "login_status_form[myLogin]=" \
   --data-urlencode "login_status_form[_token]=$TOKEN" \
-  "https://auth.hotsplots.de/login" -o /dev/null
+  "$AUTH_URL" 2>&1)
+
+echo "POST Request Completed." | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
