@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.2.0"
+# SCRIPT_VERSION="1.2.1"
 trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -7,6 +7,7 @@ COOKIE_FILE=$(mktemp)
 HTML_FILE=$(mktemp)
 
 echo "Starting Hotspot login process..." | tee -a "$LOG_FILE"
+
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
@@ -18,7 +19,6 @@ for i in {1..20}; do
 done
 
 echo "Fetching landing page to extract dynamic parameters..." | tee -a "$LOG_FILE"
-# Get initial landing page. The portal will redirect us to the login page.
 curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" "http://neverssl.com" -o "$HTML_FILE"
 HTML=$(cat "$HTML_FILE")
 
@@ -34,6 +34,7 @@ if [ -z "$CHALLENGE" ]; then
 else
     echo "Submitting Terms Acceptance POST request..." | tee -a "$LOG_FILE"
     # We send haveTerms=1 and termsOK=on to accept AGB as per form definition.
+    # Including all hidden fields extracted from the HTML to ensure session integrity.
     POST_DATA="haveTerms=1&termsOK=on&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&userurl=$USERURL&myLogin=agb&ll=de&nasid=$NASID&custom=1&button=kostenlos+einloggen"
     RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" "https://www.hotsplots.de/auth/login.php" 2>&1)
     echo "Login Request complete." | tee -a "$LOG_FILE"
