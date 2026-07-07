@@ -15,23 +15,22 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
-# We use the parameters from the redirect query string to initiate the correct session
+echo "Fetching portal redirection..." | tee -a "$LOG_FILE"
+# Get the redirect location and ensure we follow it to the main auth page
 REDIRECT_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" -w "%{url_effective}" "http://neverssl.com" 2>&1 | grep "Location:" | sed 's/Location: //g' | sed 's/\r//g' | tail -n 1)
 
-# Extract form values from HTML
+# Fallback if initial fetch didn't catch the URL
+[ -z "$REDIRECT_URL" ] && REDIRECT_URL="https://auth.hotsplots.de/login"
+
+echo "Extraction phase: Parsing hidden inputs..." | tee -a "$LOG_FILE"
 CHALLENGE=$(sed -n 's/.*id="login_status_form_challenge" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 UAMIP=$(sed -n 's/.*id="login_status_form_uamip" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 UAMPORT=$(sed -n 's/.*id="login_status_form_uamport" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 TOKEN=$(sed -n 's/.*id="login_status_form__token" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 
-echo "Extracted Tokens: Challenge=$CHALLENGE Token=$TOKEN" | tee -a "$LOG_FILE"
-
 echo "Submitting acceptance POST request..." | tee -a "$LOG_FILE"
-# Use the effective URL base for the POST submission
-POST_URL=$(echo "$REDIRECT_URL" | cut -d'?' -f1)
-
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
+# Submit to the URL extracted from the form or the current page
+RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
   --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
   --data-urlencode "login_status_form[uamip]=$UAMIP" \
@@ -39,14 +38,15 @@ curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[ll]=" \
   --data-urlencode "login_status_form[myLogin]=" \
   --data-urlencode "login_status_form[_token]=$TOKEN" \
-  "$POST_URL" 2>&1 | tee -a "$LOG_FILE"
+  "$REDIRECT_URL" 2>&1)
 
-echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
-CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+echo "Request Finished. Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 10 "http://connectivitycheck.gstatic.com/generate_204")
+
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
     exit 0
 else
-    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)" | tee -a "$LOG_FILE"
+    echo "ERROR: Portal request failed or no connectivity (Code: $CHECK_CODE)" | tee -a "$LOG_FILE"
     exit 1
 fi
