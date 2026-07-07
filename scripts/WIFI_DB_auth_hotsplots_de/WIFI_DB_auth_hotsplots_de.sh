@@ -5,31 +5,30 @@ USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 COOKIE_FILE="/tmp/hotsplots_cookies.txt"
 HTML_OUT="/tmp/portal_page.html"
 
-echo "Waiting for network..." | tee -a "$LOG_FILE"
+echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
-        echo "Network ready." | tee -a "$LOG_FILE"
+        echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
+        sleep 2
         break
     fi
     sleep 1
 done
 
-echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
-# Fetching the page to initialize session and extract dynamic form tokens
-curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "http://neverssl.com" 2>&1 | tee -a "$LOG_FILE"
+echo "Fetching portal page to extract dynamic form tokens..." | tee -a "$LOG_FILE"
+# Capture the initial page to get the CSRF token and challenge
+curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "https://auth.hotsplots.de/login" 2>&1 | tee -a "$LOG_FILE"
 
 CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 
-echo "Found Challenge: $CHALLENGE" | tee -a "$LOG_FILE"
+echo "Tokens extracted: Challenge=$CHALLENGE Token=$TOKEN" | tee -a "$LOG_FILE"
 
-# The form POSTs to the same URI. We extract the action URL if possible, or default to the base domain auth path.
-AUTH_URL="https://auth.hotsplots.de/login"
-
-echo "Submitting authentication..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
+echo "Submitting acceptance POST request..." | tee -a "$LOG_FILE"
+# Hotsplots portals typically respond to POST requests to the same URL with the hidden form fields
+POST_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
   --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
   --data-urlencode "login_status_form[uamip]=$UAMIP" \
@@ -37,9 +36,9 @@ RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[ll]=" \
   --data-urlencode "login_status_form[myLogin]=" \
   --data-urlencode "login_status_form[_token]=$TOKEN" \
-  "$AUTH_URL" 2>&1)
+  "https://auth.hotsplots.de/login" 2>&1)
 
-echo "HTTP Response: $RESPONSE" | tee -a "$LOG_FILE"
+echo "POST Request sent. Verifying connectivity..." | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
