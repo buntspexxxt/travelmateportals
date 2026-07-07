@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.0.0"
+# SCRIPT_VERSION="1.1.0"
 trap 'rm -f "${COOKIE_FILE:-}" "${LOG_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
@@ -21,12 +21,12 @@ perform_curl() {
     curl -k -v -L -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$@"
 }
 
-echo "Step 1: Fetching initial redirect parameters..." | tee -a "$LOG_FILE"
-HEADERS=$(perform_curl -I "http://neverssl.com" 2>&1)
-REDIRECT_URL=$(echo "$HEADERS" | sed -n 's/^[Ll]ocation: \(.*\)/\1/p' | sed 's/\r//g')
+echo "Step 1: Detecting redirect and parameters..." | tee -a "$LOG_FILE"
+HEADERS=$(curl -k -v -I -A "$USER_AGENT" "http://neverssl.com" 2>&1)
+REDIRECT_URL=$(echo "$HEADERS" | sed -n 's/^[Ll]ocation: \(.*\)/\1/p' | sed 's/\r//g' | head -n 1)
 
-LOGIN_URL_ENCODED=$(echo "$REDIRECT_URL" | sed -n 's/.*loginurl=\([^&]*\).*/\1/p')
-HOTSPLOTS_LOGIN_URL=$(echo "$LOGIN_URL_ENCODED" | sed 's/%3a/:/g;s/%2f/\//g;s/%26/\&/g;s/%3d/=/g')
+# Extract Hotsplots redirect URL from the Location header parameters
+HOTSPLOTS_LOGIN_URL=$(echo "$REDIRECT_URL" | sed -n 's/.*loginurl=\(.*\)/\1/p' | sed 's/%3a/:/g;s/%2f/\//g;s/%26/\&/g;s/%3d/=/g')
 
 CHALLENGE=$(echo "$HOTSPLOTS_LOGIN_URL" | sed -n 's/.*challenge=\([^&]*\).*/\1/p')
 UAMIP=$(echo "$HOTSPLOTS_LOGIN_URL" | sed -n 's/.*uamip=\([^&]*\).*/\1/p')
@@ -34,14 +34,10 @@ UAMPORT=$(echo "$HOTSPLOTS_LOGIN_URL" | sed -n 's/.*uamport=\([^&]*\).*/\1/p')
 MAC=$(echo "$HOTSPLOTS_LOGIN_URL" | sed -n 's/.*mac=\([^&]*\).*/\1/p')
 NASID=$(echo "$HOTSPLOTS_LOGIN_URL" | sed -n 's/.*nasid=\([^&]*\).*/\1/p')
 
-echo "Step 2: Accessing portal.iob.de and clicking 'Online gehen'..." | tee -a "$LOG_FILE"
-PORTAL_HTML=$(perform_curl "$REDIRECT_URL" 2>&1)
-PRELOGIN_URL="http://192.168.44.1/prelogin"
+echo "Step 2: Performing prelogin trigger..." | tee -a "$LOG_FILE"
+perform_curl "http://192.168.44.1/prelogin"
 
-echo "Step 3: Executing prelogin..." | tee -a "$LOG_FILE"
-perform_curl "$PRELOGIN_URL"
-
-echo "Step 4: Submitting Hotsplots Auth..." | tee -a "$LOG_FILE"
+echo "Step 3: Submitting Hotsplots Auth..." | tee -a "$LOG_FILE"
 POST_DATA="username=&password=&button=Login&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&mac=$MAC&nasid=$NASID"
 FORM_ACTION=$(echo "$HOTSPLOTS_LOGIN_URL" | cut -d'?' -f1)
 perform_curl -X POST -d "$POST_DATA" "$FORM_ACTION"
