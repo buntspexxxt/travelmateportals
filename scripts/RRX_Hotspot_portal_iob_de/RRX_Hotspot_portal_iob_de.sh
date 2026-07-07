@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.1.0"
+# SCRIPT_VERSION="1.1.2"
 trap 'rm -f "${COOKIE_FILE:-}" "${LOG_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
@@ -34,7 +34,7 @@ UAMPORT=$(echo "$HOTSPLOTS_LOGIN_URL" | sed -n 's/.*uamport=\([^&]*\).*/\1/p')
 MAC=$(echo "$HOTSPLOTS_LOGIN_URL" | sed -n 's/.*mac=\([^&]*\).*/\1/p')
 NASID=$(echo "$HOTSPLOTS_LOGIN_URL" | sed -n 's/.*nasid=\([^&]*\).*/\1/p')
 
-echo "Step 2: Performing prelogin trigger..." | tee -a "$LOG_FILE"
+echo "Step 2: Triggering portal redirect..." | tee -a "$LOG_FILE"
 perform_curl "http://192.168.44.1/prelogin"
 
 echo "Step 3: Submitting Hotsplots Auth..." | tee -a "$LOG_FILE"
