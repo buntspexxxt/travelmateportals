@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.0.0"
+# SCRIPT_VERSION="1.1.0"
 trap 'rm -f "${COOKIE_FILE:-}" "${LOG_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
@@ -21,35 +21,31 @@ perform_curl() {
     curl -k -v -L -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$@"
 }
 
-echo "Step 1: Capturing initial redirect URL..." | tee -a "$LOG_FILE"
+echo "Step 1: Detecting redirect..." | tee -a "$LOG_FILE"
 REDIRECT_INFO=$(curl -k -v -I -A "$USER_AGENT" "http://neverssl.com" 2>&1)
-REDIRECT_URL=$(echo "$REDIRECT_INFO" | sed -n 's/^[Ll]ocation: \(.*\)/\1/p' | sed 's/\r//g' | head -n 1)
+LOGIN_URL_ENCODED=$(echo "$REDIRECT_INFO" | sed -n 's/.*loginurl=\([^ ]*\).*/\1/p' | sed 's/\r//g')
 
-echo "Step 2: Accessing the landing page..." | tee -a "$LOG_FILE"
-perform_curl "$REDIRECT_URL"
-
-echo "Step 3: Triggering the prelogin sequence..." | tee -a "$LOG_FILE"
-# The HTML indicates the action is http://192.168.44.1/prelogin
-# We follow the redirect to the CoovaChilli prelogin
-perform_curl "http://192.168.44.1/prelogin"
-
-echo "Step 4: Attempting to auth with Hotsplots..." | tee -a "$LOG_FILE"
-# Extracting login URL from query parameters of the redirect
-LOGIN_URL_ENCODED=$(echo "$REDIRECT_URL" | sed -n 's/.*loginurl=\(.*\)/\1/p')
+# Handle URL decoding for the login parameter
 LOGIN_URL=$(echo -e "${LOGIN_URL_ENCODED//%/\\x}")
 
-CHALLENGE=$(echo "$LOGIN_URL" | sed -n 's/.*challenge=\([^&]*\).*/\1/p')
-UAMIP=$(echo "$LOGIN_URL" | sed -n 's/.*uamip=\([^&]*\).*/\1/p')
-UAMPORT=$(echo "$LOGIN_URL" | sed -n 's/.*uamport=\([^&]*\).*/\1/p')
-MAC=$(echo "$LOGIN_URL" | sed -n 's/.*mac=\([^&]*\).*/\1/p')
-NASID=$(echo "$LOGIN_URL" | sed -n 's/.*nasid=\([^&]*\).*/\1/p')
+echo "Step 2: Accessing the Hotsplots auth page..." | tee -a "$LOG_FILE"
+AUTH_HTML=$(perform_curl "$LOGIN_URL")
 
-# Perform final POST to the authentication service
-AUTH_HOST=$(echo "$LOGIN_URL" | cut -d'/' -f1-3)
-AUTH_PATH=$(echo "$LOGIN_URL" | cut -d'/' -f4-)
+echo "Step 3: Extracting CoovaChilli parameters..." | tee -a "$LOG_FILE"
+CHALLENGE=$(echo "$AUTH_HTML" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p')
+UAMIP=$(echo "$AUTH_HTML" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p')
+UAMPORT=$(echo "$AUTH_HTML" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p')
+MAC=$(echo "$AUTH_HTML" | sed -n 's/.*name="mac" value="\([^"]*\)".*/\1/p')
+NASID=$(echo "$AUTH_HTML" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p')
+
+# If variables are missing, fallback to parsing them from the initial URL
+[ -z "$CHALLENGE" ] && CHALLENGE=$(echo "$LOGIN_URL" | sed -n 's/.*challenge=\([^&]*\).*/\1/p')
+[ -z "$UAMIP" ] && UAMIP=$(echo "$LOGIN_URL" | sed -n 's/.*uamip=\([^&]*\).*/\1/p')
+
+echo "Step 4: Submitting auth form..." | tee -a "$LOG_FILE"
+# The portal requires the 'button=Login' and empty user/pass for guest access
 POST_DATA="username=&password=&button=Login&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&mac=$MAC&nasid=$NASID"
-
-perform_curl -X POST -d "$POST_DATA" "$AUTH_HOST/$AUTH_PATH"
+perform_curl -X POST -d "$POST_DATA" "$LOGIN_URL"
 
 echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
