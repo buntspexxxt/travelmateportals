@@ -3,7 +3,7 @@
 LOG_FILE="/tmp/wifi_login.log"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 COOKIE_FILE="/tmp/hotsplots_cookies.txt"
-LANDING_HTML="/tmp/hotsplots_landing.html"
+HTML_OUT="/tmp/portal_page.html"
 
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
@@ -15,23 +15,22 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Step 1: Fetching initial portal page..." | tee -a "$LOG_FILE"
-curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$LANDING_HTML" "http://neverssl.com"
+echo "Fetching portal page..." | tee -a "$LOG_FILE"
+# We use -L to follow the redirect to the authentication portal
+curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "http://neverssl.com"
 
-echo "Step 2: Parsing hidden fields from form..." | tee -a "$LOG_FILE"
-CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' "$LANDING_HTML")
-UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' "$LANDING_HTML")
-UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$LANDING_HTML")
-TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$LANDING_HTML")
+echo "Extracting form parameters..." | tee -a "$LOG_FILE"
+# Extracting the target form action URL if it exists, otherwise defaulting to the current URL
+# The hotsplots portal usually posts back to the same auth URL or a specific action path
+CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 
-echo "Extracted Tokens: Challenge=$CHALLENGE" | tee -a "$LOG_FILE"
-
-echo "Step 3: Submitting acceptance POST request..." | tee -a "$LOG_FILE"
-# The portal requires a POST to the same endpoint to simulate the button click action.
-# We use the current URL (Effective URL) to identify the target path dynamically.
-EFFECTIVE_URL=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -s -I -o /dev/null -w "%{url_effective}" "http://neverssl.com")
-
-RESPONSE_CODE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -X POST \
+echo "Submitting form..." | tee -a "$LOG_FILE"
+# Post to the same URL, which is handled by the auth engine
+# Using --data-urlencode to safely pass the tokens
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
   --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
   --data-urlencode "login_status_form[uamip]=$UAMIP" \
@@ -39,9 +38,7 @@ RESPONSE_CODE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" 
   --data-urlencode "login_status_form[ll]=" \
   --data-urlencode "login_status_form[myLogin]=" \
   --data-urlencode "login_status_form[_token]=$TOKEN" \
-  "$EFFECTIVE_URL" -o /dev/null -w "%{http_code}")
-
-echo "HTTP Response Code: $RESPONSE_CODE" | tee -a "$LOG_FILE"
+  "https://auth.hotsplots.de/login" -o /dev/null
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
