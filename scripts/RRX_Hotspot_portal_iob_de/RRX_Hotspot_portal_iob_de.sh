@@ -1,46 +1,51 @@
 #!/bin/bash
+
+# Auto-injected cleanup trap for temporary session files
+trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
+# SCRIPT_VERSION="1.0.0"
 LOG_FILE="/tmp/portal_login.log"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 echo "Starting RRX Hotspot Login Process..." | tee -a "$LOG_FILE"
 
 # 1. Wait for DHCP
-echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
+echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
-    if ip route | grep -q default; then
-        echo "Gateway found! DHCP successful." | tee -a "$LOG_FILE"
-        sleep 6
+    if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
+        echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
+        sleep 2
         break
     fi
     sleep 1
 done
 
-# 2. Trigger initial redirect to capture Hotsplots parameters
-echo "Fetching initial redirect to extract Hotsplots parameters..." | tee -a "$LOG_FILE"
-# We fetch the URL that holds the 'loginurl' parameter in its Location header
-RESPONSE=$(curl -k -k -v -A "$USER_AGENT" http://neverssl.com 2>&1)
+# 2. Trigger initial redirect to capture portal parameters
+echo "Fetching initial redirect to identify portal..." | tee -a "$LOG_FILE"
+RESPONSE=$(curl -k -v -A "$USER_AGENT" -L http://neverssl.com 2>&1)
+echo "Response captured." | tee -a "$LOG_FILE"
 
-# Extract the loginurl parameter (the Hotsplots auth URL)
-LOGIN_URL=$(echo "$RESPONSE" | sed -n 's/.*loginurl=\([^ ]*\).*/\1/p' | sed 's/%3a/:/g;s/%2f/\//g;s/%26/\&/g;s/%3d/=/g' | tr -d '\r')
+# Note: 'neverssl.com' is a utility site, not the portal itself. The portal is triggered by the network redirect.
+# We need to hit the portal gateway directly. Based on the previous log, 192.168.44.1 is the gateway.
 
-if [ -z "$LOGIN_URL" ]; then
-    echo "Failed to extract LOGIN_URL. Exiting." | tee -a "$LOG_FILE"
-    exit 1
-fi
-echo "Found Hotsplots Auth URL: $LOGIN_URL" | tee -a "$LOG_FILE"
+# 3. Access the portal and handle prelogin
+echo "Accessing prelogin page..." | tee -a "$LOG_FILE"
+curl -k -v -A "$USER_AGENT" http://192.168.44.1/prelogin >> "$LOG_FILE" 2>&1
 
-# 3. Perform Prelogin (The RRX specific step)
-echo "Accessing prelogin page on the router..." | tee -a "$LOG_FILE"
-curl -k -k -v -A "$USER_AGENT" http://192.168.44.1/prelogin >> "$LOG_FILE" 2>&1
-
-# 4. Perform final auth with Hotsplots
-echo "Submitting final login request to Hotsplots..." | tee -a "$LOG_FILE"
-# Based on the Hotsplots standard protocol, we POST the required fields
-AUTH_RESPONSE=$(curl -k -k -v -A "$USER_AGENT" -d "username=&password=&button=Login" "$LOGIN_URL" 2>&1)
-
-echo "Auth Response: $AUTH_RESPONSE" | tee -a "$LOG_FILE"
+# 4. Handle the portal sequence
+echo "Submitting portal acceptance..." | tee -a "$LOG_FILE"
+# Using a cookie jar for session maintenance
+COOKIE_FILE=$(mktemp)
+curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -d "accept=1&submit=Connect" http://192.168.44.1/login >> "$LOG_FILE" 2>&1
 
 # 5. Connectivity check
-echo "Checking internet connectivity..." | tee -a "$LOG_FILE"
-ping -c 3 8.8.8.8 >/dev/null && echo "Success: Internet access restored." || { echo "Error: Connectivity test failed."; exit 1; }
-exit 0
+echo "Verifying real Internet connectivity..."
+CHECK_CODE=$(curl -k -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
+    echo "SUCCESS: Internet connection verified!"
+    rm "$COOKIE_FILE"
+    exit 0
+else
+    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)"
+    rm "$COOKIE_FILE"
+    exit 1
+fi
