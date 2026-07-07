@@ -15,20 +15,23 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Fetching portal page to extract dynamic form tokens..." | tee -a "$LOG_FILE"
-# Capture the initial page to get the CSRF token and challenge
-curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "https://auth.hotsplots.de/login" 2>&1 | tee -a "$LOG_FILE"
+echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
+# We use the parameters from the redirect query string to initiate the correct session
+REDIRECT_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" -w "%{url_effective}" "http://neverssl.com" 2>&1 | grep "Location:" | sed 's/Location: //g' | sed 's/\r//g' | tail -n 1)
 
-CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
-UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
-UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
-TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+# Extract form values from HTML
+CHALLENGE=$(sed -n 's/.*id="login_status_form_challenge" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+UAMIP=$(sed -n 's/.*id="login_status_form_uamip" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+UAMPORT=$(sed -n 's/.*id="login_status_form_uamport" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+TOKEN=$(sed -n 's/.*id="login_status_form__token" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 
-echo "Tokens extracted: Challenge=$CHALLENGE Token=$TOKEN" | tee -a "$LOG_FILE"
+echo "Extracted Tokens: Challenge=$CHALLENGE Token=$TOKEN" | tee -a "$LOG_FILE"
 
 echo "Submitting acceptance POST request..." | tee -a "$LOG_FILE"
-# Hotsplots portals typically respond to POST requests to the same URL with the hidden form fields
-POST_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
+# Use the effective URL base for the POST submission
+POST_URL=$(echo "$REDIRECT_URL" | cut -d'?' -f1)
+
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
   --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
   --data-urlencode "login_status_form[uamip]=$UAMIP" \
@@ -36,9 +39,7 @@ POST_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" 
   --data-urlencode "login_status_form[ll]=" \
   --data-urlencode "login_status_form[myLogin]=" \
   --data-urlencode "login_status_form[_token]=$TOKEN" \
-  "https://auth.hotsplots.de/login" 2>&1)
-
-echo "POST Request sent. Verifying connectivity..." | tee -a "$LOG_FILE"
+  "$POST_URL" 2>&1 | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
