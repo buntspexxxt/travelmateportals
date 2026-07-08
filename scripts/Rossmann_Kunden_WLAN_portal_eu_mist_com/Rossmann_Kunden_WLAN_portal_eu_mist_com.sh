@@ -1,4 +1,5 @@
 #!/bin/bash
+# SCRIPT_VERSION="1.1.0"
 LOG_FILE="/tmp/portal_login.log"
 echo "Starting login script..." | tee -a "$LOG_FILE"
 
@@ -40,5 +41,12 @@ RESPONSE=$(curl -k -v -A "$USER_AGENT" -b /tmp/portal_cookies.txt -c /tmp/portal
 echo "HTTP Response Received." | tee -a "$LOG_FILE"
 
 # Final connectivity check
-echo "Verifying internet connectivity..." | tee -a "$LOG_FILE"
-ping -c 3 8.8.8.8 >/dev/null && echo "Success: Internet reached." | tee -a "$LOG_FILE" && exit 0 || exit 1
+echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
+    echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
+    exit 0
+else
+    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)" | tee -a "$LOG_FILE"
+    exit 1
+fi
