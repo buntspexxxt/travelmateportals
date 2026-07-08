@@ -1,11 +1,11 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.3.0"
+# SCRIPT_VERSION="1.4.0"
 trap 'rm -f "${COOKIE_FILE:-}" "${LOG_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-echo "Starting RRX Hotspot Login Process..." | tee -a "$LOG_FILE"
+echo "Starting Hotsplots/RRX Portal Login Process..." | tee -a "$LOG_FILE"
 
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
@@ -21,32 +21,30 @@ perform_curl() {
     curl -k -v -L -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$@"
 }
 
-echo "Step 1: Extracting auth redirect URL from landing page..." | tee -a "$LOG_FILE"
-LANDING_RESPONSE=$(perform_curl -L "http://portal.iob.de/")
+echo "Step 1: Identifying redirect parameters..." | tee -a "$LOG_FILE"
+# Extracting parameters from the redirect URL seen in previous attempts
+REDIRECT_RESPONSE=$(perform_curl -I "http://neverssl.com")
+LOGIN_URL=$(echo "$REDIRECT_RESPONSE" | grep -i "Location:" | sed 's/Location: //g' | sed 's/\r//g' | head -n 1 | tr -d '[:space:]')
 
-echo "Step 2: Following redirect to prelogin..." | tee -a "$LOG_FILE"
-# The HTML indicates clicking 'Online gehen' redirects to 192.168.44.1/prelogin
-AUTH_PAGE=$(perform_curl -L "http://192.168.44.1/prelogin")
-
-echo "Step 3: Parsing parameters from the actual Hotsplots login page..." | tee -a "$LOG_FILE"
-# The previous log confirms the Hotsplots URL contains all necessary challenge data
-# We extract the URL from the Location header of the prelogin response
-REDIRECT_URL=$(echo "$AUTH_PAGE" | grep -i "Location:" | sed 's/Location: //g' | sed 's/\r//g' | head -n 1 | tr -d '[:space:]')
-
-# Fallback if redirect header is not captured: use the pattern observed in previous logs
-if [ -z "$REDIRECT_URL" ]; then
-    echo "Searching for Hotsplots login form..." | tee -a "$LOG_FILE"
-    # We need the full URL from the browser's redirect perspective
-    REDIRECT_URL="https://www.hotsplots.de/auth/login.php"
+if [[ ! "$LOGIN_URL" =~ "hotsplots.de" ]]; then
+    echo "Error: Could not capture Hotsplots redirect URL. Using fallback." | tee -a "$LOG_FILE"
+    exit 1
 fi
 
-echo "Step 4: Submitting Hotsplots credentials..." | tee -a "$LOG_FILE"
-# Based on Hotsplots standard: extract variables from the URL or the current page form
-# We assume empty fields for terms-of-service acceptance
-POST_DATA="button=Login&username=&password="
+echo "Step 2: Fetching Hotsplots login page..." | tee -a "$LOG_FILE"
+LOGIN_PAGE=$(perform_curl -L "$LOGIN_URL")
 
-echo "Executing Final POST to Hotsplots..." | tee -a "$LOG_FILE"
-perform_curl -X POST -d "$POST_DATA" "$REDIRECT_URL"
+echo "Step 3: Extracting hidden form fields (challenge, etc)..." | tee -a "$LOG_FILE"
+# Using POSIX sed to extract hidden inputs
+CHALLENGE=$(echo "$LOGIN_PAGE" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p')
+UAMIP=$(echo "$LOGIN_PAGE" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p')
+UAMPORT=$(echo "$LOGIN_PAGE" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p')
+MAC=$(echo "$LOGIN_PAGE" | sed -n 's/.*name="mac" value="\([^"]*\)".*/\1/p')
+
+POST_DATA="username=&password=&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&mac=$MAC&button=Login"
+
+echo "Step 4: Submitting login request..." | tee -a "$LOG_FILE"
+perform_curl -X POST -d "$POST_DATA" "$LOGIN_URL"
 
 echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
