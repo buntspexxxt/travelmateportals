@@ -21,32 +21,32 @@ perform_curl() {
     curl -k -v -L -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$@"
 }
 
-echo "Step 1: Extracting auth redirect URL from portal.iob.de..." | tee -a "$LOG_FILE"
-INITIAL_PAGE=$(perform_curl -s "http://portal.iob.de/")
-# The logs showed the redirect URL is passed via a query parameter 'loginurl' in the initial redirect
-REDIRECT_URL=$(curl -I -k -s -A "$USER_AGENT" "http://neverssl.com" | grep -i "Location:" | sed 's/Location: //g' | sed 's/\r//g')
+echo "Step 1: Extracting auth redirect URL from landing page..." | tee -a "$LOG_FILE"
+LANDING_RESPONSE=$(perform_curl -L "http://portal.iob.de/")
 
-# Extract the Hotsplots URL from the nested loginurl parameter if present
-AUTH_TARGET=$(echo "$REDIRECT_URL" | sed -n 's/.*loginurl=\(.*\)/\1/p' | sed 's/%3a/:/g' | sed 's/%2f/\//g' | sed 's/%3f/?/g' | sed 's/%26/\&/g' | sed 's/\&userurl=.*//g')
+echo "Step 2: Following redirect to prelogin..." | tee -a "$LOG_FILE"
+# The HTML indicates clicking 'Online gehen' redirects to 192.168.44.1/prelogin
+AUTH_PAGE=$(perform_curl -L "http://192.168.44.1/prelogin")
 
-if [ -z "$AUTH_TARGET" ]; then
-    echo "Direct extraction failed, trying default Hotsplots auth path..." | tee -a "$LOG_FILE"
-    AUTH_TARGET="https://www.hotsplots.de/auth/login.php?res=notyet"
+echo "Step 3: Parsing parameters from the actual Hotsplots login page..." | tee -a "$LOG_FILE"
+# The previous log confirms the Hotsplots URL contains all necessary challenge data
+# We extract the URL from the Location header of the prelogin response
+REDIRECT_URL=$(echo "$AUTH_PAGE" | grep -i "Location:" | sed 's/Location: //g' | sed 's/\r//g' | head -n 1 | tr -d '[:space:]')
+
+# Fallback if redirect header is not captured: use the pattern observed in previous logs
+if [ -z "$REDIRECT_URL" ]; then
+    echo "Searching for Hotsplots login form..." | tee -a "$LOG_FILE"
+    # We need the full URL from the browser's redirect perspective
+    REDIRECT_URL="https://www.hotsplots.de/auth/login.php"
 fi
 
-echo "Step 2: Connecting to Hotsplots auth page: $AUTH_TARGET" | tee -a "$LOG_FILE"
-AUTH_PAGE=$(perform_curl -s "$AUTH_TARGET")
+echo "Step 4: Submitting Hotsplots credentials..." | tee -a "$LOG_FILE"
+# Based on Hotsplots standard: extract variables from the URL or the current page form
+# We assume empty fields for terms-of-service acceptance
+POST_DATA="button=Login&username=&password="
 
-CHALLENGE=$(echo "$AUTH_PAGE" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p')
-UAMIP=$(echo "$AUTH_PAGE" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p')
-UAMPORT=$(echo "$AUTH_PAGE" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p')
-MAC=$(echo "$AUTH_PAGE" | sed -n 's/.*name="mac" value="\([^"]*\)".*/\1/p')
-NASID=$(echo "$AUTH_PAGE" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p')
-
-echo "Step 3: Submitting Hotsplots auth POST data..." | tee -a "$LOG_FILE"
-# Hotsplots portals typically require these fields to proceed
-POST_DATA="username=&password=&button=Login&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&mac=$MAC&nasid=$NASID"
-perform_curl -X POST -d "$POST_DATA" "$AUTH_TARGET"
+echo "Executing Final POST to Hotsplots..." | tee -a "$LOG_FILE"
+perform_curl -X POST -d "$POST_DATA" "$REDIRECT_URL"
 
 echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
