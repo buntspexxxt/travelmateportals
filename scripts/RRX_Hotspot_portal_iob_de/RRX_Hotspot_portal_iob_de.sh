@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.0.0"
+# SCRIPT_VERSION="1.5.0"
 trap 'rm -f "${COOKIE_FILE:-}" "${LOG_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
@@ -7,6 +7,7 @@ USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 echo "Starting RRX Hotspot Portal Login Process..." | tee -a "$LOG_FILE"
 
+# Network Wait
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
@@ -22,31 +23,33 @@ perform_curl() {
 }
 
 echo "Step 1: Identifying redirect parameters..." | tee -a "$LOG_FILE"
-# Extracting Hotsplots login URL from the portal redirect
+# Fetch the portal landing page to catch the Hotsplots redirect URL in the query string
 RESPONSE=$(perform_curl -I "http://neverssl.com")
-LOGIN_URL=$(echo "$RESPONSE" | sed -n 's/^Location: \(.*\)/\1/p' | sed 's/\r//g' | head -n 1 | tr -d '[:space:]')
+REDIRECT_URL=$(echo "$RESPONSE" | grep -i "Location:" | sed 's/Location: //g' | sed 's/\r//g' | head -n 1 | tr -d '[:space:]')
 
-# The RRX portal redirects to portal.iob.de which contains the hotsplots URL in the loginurl parameter
-# We need to extract this parameter and follow it
-REAL_LOGIN_URL=$(echo "$LOGIN_URL" | sed -n 's/.*loginurl=\(.*\)/\1/p' | sed 's/%3a/:/g;s/%2f/\//g;s/%26/\&/g;s/%3d/=/g;s/%253a/:/g;s/%253d/=/g;s/%252f/\//g')
+echo "Captured Redirect URL: $REDIRECT_URL" | tee -a "$LOG_FILE"
 
-echo "Step 2: Accessing RRX Landing Page..." | tee -a "$LOG_FILE"
-# First, acknowledge the local landing page
+# Extract base login URL from the redirect query param
+LOGIN_URL=$(echo "$REDIRECT_URL" | sed -n 's/.*loginurl=\(https%3a%2f%2f[^&]*\).*/\1/p' | sed 's/%3a/:/g;s/%2f/\//g')
+
+echo "Step 2: Fetching intermediate RRX landing page..." | tee -a "$LOG_FILE"
+# The portal first hits portal.iob.de which contains the 'Online gehen' link
+perform_curl "http://portal.iob.de"
+
+echo "Step 3: Following prelogin trigger..." | tee -a "$LOG_FILE"
+# Clicking 'Online gehen' points to the local 192.168.44.1 prelogin
 perform_curl "http://192.168.44.1/prelogin"
 
-echo "Step 3: Fetching actual Hotsplots authentication page..." | tee -a "$LOG_FILE"
-LOGIN_PAGE=$(perform_curl "$REAL_LOGIN_URL")
-
-echo "Step 4: Extracting hidden form fields (challenge, etc)..." | tee -a "$LOG_FILE"
-CHALLENGE=$(echo "$LOGIN_PAGE" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p')
-UAMIP=$(echo "$LOGIN_PAGE" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p')
-UAMPORT=$(echo "$LOGIN_PAGE" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p')
-MAC=$(echo "$LOGIN_PAGE" | sed -n 's/.*name="mac" value="\([^"]*\)".*/\1/p')
+echo "Step 4: Submitting final Hotsplots credentials..." | tee -a "$LOG_FILE"
+# Now submit to the actual hotsplots auth URL extracted earlier
+# Extracting parameters dynamically for the POST request
+CHALLENGE=$(echo "$LOGIN_URL" | sed -n 's/.*challenge=\([^&]*\).*/\1/p')
+UAMIP=$(echo "$LOGIN_URL" | sed -n 's/.*uamip=\([^&]*\).*/\1/p')
+UAMPORT=$(echo "$LOGIN_URL" | sed -n 's/.*uamport=\([^&]*\).*/\1/p')
+MAC=$(echo "$LOGIN_URL" | sed -n 's/.*mac=\([^&]*\).*/\1/p')
 
 POST_DATA="username=&password=&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&mac=$MAC&button=Login"
-
-echo "Step 5: Submitting Hotsplots login request..." | tee -a "$LOG_FILE"
-perform_curl -X POST -d "$POST_DATA" "$REAL_LOGIN_URL"
+perform_curl -X POST -d "$POST_DATA" "$LOGIN_URL"
 
 echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
