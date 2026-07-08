@@ -16,36 +16,19 @@ for i in {1..20}; do
     sleep 2
 done
 
-echo "Fetching initial portal page and detecting redirect..." | tee -a "$LOG_FILE"
-# Fetch neverssl.com, follow redirects, save the final landing URL in FINAL_URL.
-# Stderr (verbose log and progress) is saved to the log file.
-FINAL_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" -w "%{url_effective}" "http://neverssl.com" 2>>"$LOG_FILE")
-
-echo "Effective Landing URL: $FINAL_URL" | tee -a "$LOG_FILE"
-
-if [ -z "$FINAL_URL" ] || [ "$FINAL_URL" = "http://neverssl.com" ] || [ "$FINAL_URL" = "http://neverssl.com/" ]; then
-    echo "ERROR: Failed to capture the redirect URL. We might already be logged in, or there is no captive portal redirect." | tee -a "$LOG_FILE"
-fi
+echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
+# Using -c to save cookies for the session
+FINAL_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" -w "%{url_effective}" "http://neverssl.com" 2>>"$LOG_FILE" | sed 's/\r//g')
 
 echo "Parsing hidden fields from HTML..." | tee -a "$LOG_FILE"
-CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
-UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
-UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
-TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
+CHALLENGE=$(sed -n 's/.*id="login_status_form_challenge" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
+UAMIP=$(sed -n 's/.*id="login_status_form_uamip" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
+UAMPORT=$(sed -n 's/.*id="login_status_form_uamport" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
+TOKEN=$(sed -n 's/.*id="login_status_form__token" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
 
-echo "Parsed parameters:" | tee -a "$LOG_FILE"
-echo "  CHALLENGE: $CHALLENGE" | tee -a "$LOG_FILE"
-echo "  UAMIP: $UAMIP" | tee -a "$LOG_FILE"
-echo "  UAMPORT: $UAMPORT" | tee -a "$LOG_FILE"
-echo "  TOKEN: $TOKEN" | tee -a "$LOG_FILE"
-
-if [ -z "$TOKEN" ]; then
-    echo "ERROR: Could not parse token from HTML! Portal structure might have changed." | tee -a "$LOG_FILE"
-fi
-
-echo "Submitting login POST request..." | tee -a "$LOG_FILE"
-# Post the login form to the dynamic FINAL_URL which has all session query parameters
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
+echo "Submitting form..." | tee -a "$LOG_FILE"
+# Submit the form using the exact field names found in the HTML form
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -o "$HTML_OUT" \
   --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
   --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
   --data-urlencode "login_status_form[uamip]=$UAMIP" \
@@ -53,11 +36,7 @@ RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[ll]=" \
   --data-urlencode "login_status_form[myLogin]=" \
   --data-urlencode "login_status_form[_token]=$TOKEN" \
-  "$FINAL_URL" 2>>"$LOG_FILE")
-
-echo "POST completed. Logged response output (first 200 chars):" | tee -a "$LOG_FILE"
-echo "$RESPONSE" | head -c 200 >> "$LOG_FILE"
-echo "" >> "$LOG_FILE"
+  "$FINAL_URL" 2>>"$LOG_FILE"
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
@@ -65,6 +44,6 @@ if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
     exit 0
 else
-    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)" | tee -a "$LOG_FILE"
+    echo "ERROR: No Internet connectivity (HTTP: $CHECK_CODE)" | tee -a "$LOG_FILE"
     exit 1
 fi
