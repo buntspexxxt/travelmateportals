@@ -15,32 +15,31 @@ for i in {1..20}; do
     sleep 2
 done
 
-echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
-curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "http://neverssl.com" > /dev/null 2>&1
+echo "Fetching initial portal page to get session and tokens..." | tee -a "$LOG_FILE"
+REDIRECT_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" -w "%{url_effective}" "http://neverssl.com" 2>&1 | grep "Location:" | sed 's/Location: //g' | sed 's/\r//g' | tail -n 1)
 
-echo "Parsing dynamic hidden fields..." | tee -a "$LOG_FILE"
-CHALLENGE=$(sed -n 's/.*id="login_status_form_challenge" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
-UAMIP=$(sed -n 's/.*id="login_status_form_uamip" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
-UAMPORT=$(sed -n 's/.*id="login_status_form_uamport" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
-TOKEN=$(sed -n 's/.*id="login_status_form__token" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+echo "Parsing dynamic hidden fields from HTML..." | tee -a "$LOG_FILE"
+CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 
-echo "Submitting login form..." | tee -a "$LOG_FILE"
-# Using base domain relative to the captured fields
-LOGIN_URL="https://auth.hotsplots.de/login"
+echo "Challenge: $CHALLENGE" | tee -a "$LOG_FILE"
+
+echo "Submitting POST login request..." | tee -a "$LOG_FILE"
+# Extracting base URL from the previous redirect to ensure we hit the correct auth endpoint
+BASE_URL=$(echo "$REDIRECT_URL" | cut -d'/' -f1-3)
 
 RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
   --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
   --data-urlencode "login_status_form[uamip]=$UAMIP" \
   --data-urlencode "login_status_form[uamport]=$UAMPORT" \
-  --data-urlencode "login_status_form[ll]=" \
-  --data-urlencode "login_status_form[myLogin]=" \
   --data-urlencode "login_status_form[_token]=$TOKEN" \
-  "$LOGIN_URL" 2>&1)
+  "$BASE_URL/login" 2>&1)
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
-
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
     exit 0
