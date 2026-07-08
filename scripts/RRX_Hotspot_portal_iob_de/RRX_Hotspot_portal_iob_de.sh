@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.6.0"
+# SCRIPT_VERSION="1.0.0"
 trap 'rm -f "${COOKIE_FILE:-}" "${LOG_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
@@ -21,32 +21,31 @@ perform_curl() {
     curl -k -v -L -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$@"
 }
 
-echo "Step 1: Identifying redirect parameters..." | tee -a "$LOG_FILE"
+echo "Step 1: Hitting landing page to trigger redirect..." | tee -a "$LOG_FILE"
 RESPONSE=$(perform_curl -I "http://neverssl.com")
 REDIRECT_URL=$(echo "$RESPONSE" | grep -i "Location:" | sed 's/Location: //g' | sed 's/\r//g' | head -n 1 | tr -d '[:space:]')
 
 if [ -z "$REDIRECT_URL" ]; then
-  echo "Failed to find redirect URL. Manual check required." | tee -a "$LOG_FILE"
+  echo "Failed to find redirect URL." | tee -a "$LOG_FILE"
   exit 1
 fi
 
+echo "Step 2: Following initial portal page..." | tee -a "$LOG_FILE"
+PAGE_HTML=$(perform_curl -L "$REDIRECT_URL")
+
+echo "Step 3: Clicking 'Online gehen' link..." | tee -a "$LOG_FILE"
+# The HTML contains <a href="http://192.168.44.1/prelogin" class="btn btn-primary btn-lg">Online gehen</a>
+# We follow this link to authenticate.
+perform_curl -L "http://192.168.44.1/prelogin"
+
+echo "Step 4: Submitting Hotsplots credentials (if required)..." | tee -a "$LOG_FILE"
 LOGIN_URL=$(echo "$REDIRECT_URL" | sed -n 's/.*loginurl=\(https%3a%2f%2f[^&]*\).*/\1/p' | sed 's/%3a/:/g;s/%2f/\//g')
-
-echo "Step 2: Fetching portal redirect to extract auth data..." | tee -a "$LOG_FILE"
-# The portal provides the login URL in the query string of the redirect
-
-echo "Step 3: Submitting Hotsplots credentials via login endpoint..." | tee -a "$LOG_FILE"
-# Extracting parameters from the redirect URL found in Step 1
 CHALLENGE=$(echo "$REDIRECT_URL" | sed -n 's/.*challenge=\([^&]*\).*/\1/p')
 UAMIP=$(echo "$REDIRECT_URL" | sed -n 's/.*uamip=\([^&]*\).*/\1/p')
 UAMPORT=$(echo "$REDIRECT_URL" | sed -n 's/.*uamport=\([^&]*\).*/\1/p')
 MAC=$(echo "$REDIRECT_URL" | sed -n 's/.*mac=\([^&]*\).*/\1/p')
 
-echo "Extracted Challenge: $CHALLENGE" | tee -a "$LOG_FILE"
-
-# Hotsplots portals typically require these fields. Leaving username/password blank for open access.
 POST_DATA="username=&password=&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&mac=$MAC&button=Login"
-
 perform_curl -X POST -d "$POST_DATA" "$LOGIN_URL"
 
 echo "Verifying real Internet connectivity..."
