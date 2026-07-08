@@ -16,17 +16,35 @@ for i in {1..20}; do
     sleep 2
 done
 
-echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
-curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "http://neverssl.com" >> "$LOG_FILE" 2>&1
+echo "Fetching initial portal page and detecting redirect..." | tee -a "$LOG_FILE"
+# Fetch neverssl.com, follow redirects, save the final landing URL in FINAL_URL.
+# Stderr (verbose log and progress) is saved to the log file.
+FINAL_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" -w "%{url_effective}" "http://neverssl.com" 2>>"$LOG_FILE")
+
+echo "Effective Landing URL: $FINAL_URL" | tee -a "$LOG_FILE"
+
+if [ -z "$FINAL_URL" ] || [ "$FINAL_URL" = "http://neverssl.com" ] || [ "$FINAL_URL" = "http://neverssl.com/" ]; then
+    echo "ERROR: Failed to capture the redirect URL. We might already be logged in, or there is no captive portal redirect." | tee -a "$LOG_FILE"
+fi
 
 echo "Parsing hidden fields from HTML..." | tee -a "$LOG_FILE"
-CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
-UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
-UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
-TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
+UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
+UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
+TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
+
+echo "Parsed parameters:" | tee -a "$LOG_FILE"
+echo "  CHALLENGE: $CHALLENGE" | tee -a "$LOG_FILE"
+echo "  UAMIP: $UAMIP" | tee -a "$LOG_FILE"
+echo "  UAMPORT: $UAMPORT" | tee -a "$LOG_FILE"
+echo "  TOKEN: $TOKEN" | tee -a "$LOG_FILE"
+
+if [ -z "$TOKEN" ]; then
+    echo "ERROR: Could not parse token from HTML! Portal structure might have changed." | tee -a "$LOG_FILE"
+fi
 
 echo "Submitting login POST request..." | tee -a "$LOG_FILE"
-# The POST target is determined by the form action, or relative to the current auth page
+# Post the login form to the dynamic FINAL_URL which has all session query parameters
 RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
   --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
@@ -35,7 +53,11 @@ RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L \
   --data-urlencode "login_status_form[ll]=" \
   --data-urlencode "login_status_form[myLogin]=" \
   --data-urlencode "login_status_form[_token]=$TOKEN" \
-  "https://auth.hotsplots.de/login" >> "$LOG_FILE" 2>&1)
+  "$FINAL_URL" 2>>"$LOG_FILE")
+
+echo "POST completed. Logged response output (first 200 chars):" | tee -a "$LOG_FILE"
+echo "$RESPONSE" | head -c 200 >> "$LOG_FILE"
+echo "" >> "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
