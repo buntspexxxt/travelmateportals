@@ -28,13 +28,15 @@ if [ -z "$WBS_TOKEN" ]; then echo "Failed to extract token"; exit 1; fi
 
 echo "Step 3: Initializing session via POST..."
 # We use the token to register the intent
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://469.rdr.conn4.com/wbs/de/roaming/return/" -d "token=$WBS_TOKEN")
-echo "HTTP Response: $RESPONSE"
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://469.rdr.conn4.com/wbs/de/roaming/return/" -d "token=$WBS_TOKEN"
 
 echo "Step 4: Executing Scene Accept event..."
 # The HTML/JS indicates the scene ID is 'agbRwik_7LwIN_lF'
-ACCEPT_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://469.rdr.conn4.com/scenes/agbRwik_7LwIN_lF/" -d "action=accept&terms=1")
-echo "HTTP Response: $ACCEPT_RESPONSE"
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://469.rdr.conn4.com/scenes/agbRwik_7LwIN_lF/" -d "action=accept&terms=1"
+
+echo "Step 5: Verifying final portal redirect state..."
+# The provided HTML content is just a NeverSSL 'Connecting' placeholder. 
+# This often implies the portal has finished the handshake and we should now reach the internet.
 
 echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
