@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.2.0"
+# SCRIPT_VERSION="1.3.0"
 trap 'rm -f "${COOKIE_FILE:-}" "${LOG_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
@@ -21,33 +21,32 @@ perform_curl() {
     curl -k -v -L -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$@"
 }
 
-echo "Step 1: Fetching redirect info..." | tee -a "$LOG_FILE"
-# We use the portal.iob.de landing page directly as observed in the logs
-START_PAGE=$(perform_curl -I "http://portal.iob.de/")
+echo "Step 1: Extracting auth redirect URL from portal.iob.de..." | tee -a "$LOG_FILE"
+INITIAL_PAGE=$(perform_curl -s "http://portal.iob.de/")
+# The logs showed the redirect URL is passed via a query parameter 'loginurl' in the initial redirect
+REDIRECT_URL=$(curl -I -k -s -A "$USER_AGENT" "http://neverssl.com" | grep -i "Location:" | sed 's/Location: //g' | sed 's/\r//g')
 
-echo "Step 2: Accessing prelogin page to trigger CoovaChilli redirect..." | tee -a "$LOG_FILE"
-# The HTML analysis shows a link to /prelogin that initializes the auth flow
-AUTH_RESPONSE=$(perform_curl -v "http://192.168.44.1/prelogin")
+# Extract the Hotsplots URL from the nested loginurl parameter if present
+AUTH_TARGET=$(echo "$REDIRECT_URL" | sed -n 's/.*loginurl=\(.*\)/\1/p' | sed 's/%3a/:/g' | sed 's/%2f/\//g' | sed 's/%3f/?/g' | sed 's/%26/\&/g' | sed 's/\&userurl=.*//g')
 
-echo "Step 3: Extracting CoovaChilli parameters from redirect..." | tee -a "$LOG_FILE"
-# After hitting /prelogin, we should be redirected to the Hotsplots auth URL
-# We check for the location header or extract from redirected page
-REDIRECT_URL=$(echo "$AUTH_RESPONSE" | grep -i "Location:" | sed 's/Location: //g' | sed 's/\r//g' | head -n 1)
-
-if [ -z "$REDIRECT_URL" ]; then
-    echo "Failed to extract redirect URL, checking if already on auth page..." | tee -a "$LOG_FILE"
-    REDIRECT_URL="https://www.hotsplots.de/auth/login.php?res=notyet"
+if [ -z "$AUTH_TARGET" ]; then
+    echo "Direct extraction failed, trying default Hotsplots auth path..." | tee -a "$LOG_FILE"
+    AUTH_TARGET="https://www.hotsplots.de/auth/login.php?res=notyet"
 fi
 
-CHALLENGE=$(echo "$REDIRECT_URL" | sed -n 's/.*challenge=\([^&]*\).*/\1/p')
-UAMIP=$(echo "$REDIRECT_URL" | sed -n 's/.*uamip=\([^&]*\).*/\1/p')
-UAMPORT=$(echo "$REDIRECT_URL" | sed -n 's/.*uamport=\([^&]*\).*/\1/p')
-MAC=$(echo "$REDIRECT_URL" | sed -n 's/.*mac=\([^&]*\).*/\1/p')
-NASID=$(echo "$REDIRECT_URL" | sed -n 's/.*nasid=\([^&]*\).*/\1/p')
+echo "Step 2: Connecting to Hotsplots auth page: $AUTH_TARGET" | tee -a "$LOG_FILE"
+AUTH_PAGE=$(perform_curl -s "$AUTH_TARGET")
 
-echo "Step 4: Submitting Hotsplots credentials..." | tee -a "$LOG_FILE"
+CHALLENGE=$(echo "$AUTH_PAGE" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p')
+UAMIP=$(echo "$AUTH_PAGE" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p')
+UAMPORT=$(echo "$AUTH_PAGE" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p')
+MAC=$(echo "$AUTH_PAGE" | sed -n 's/.*name="mac" value="\([^"]*\)".*/\1/p')
+NASID=$(echo "$AUTH_PAGE" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p')
+
+echo "Step 3: Submitting Hotsplots auth POST data..." | tee -a "$LOG_FILE"
+# Hotsplots portals typically require these fields to proceed
 POST_DATA="username=&password=&button=Login&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&mac=$MAC&nasid=$NASID"
-perform_curl -X POST -d "$POST_DATA" "$REDIRECT_URL"
+perform_curl -X POST -d "$POST_DATA" "$AUTH_TARGET"
 
 echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
