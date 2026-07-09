@@ -16,18 +16,16 @@ for i in {1..20}; do
     sleep 2
 done
 
-echo "Fetching initial portal page to get session and tokens..." | tee -a "$LOG_FILE"
-# We use the initial redirect to capture the session cookie and the initial state
+echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
 curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "http://neverssl.com" > /tmp/curl_debug.txt 2>&1
 
 echo "Parsing hidden form fields..." | tee -a "$LOG_FILE"
-CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
-UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
-UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
-TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\r//g')
+CHALLENGE=$(sed -n 's/.*name="login_status_form\[challenge\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | tr -d '\015')
+UAMIP=$(sed -n 's/.*name="login_status_form\[uamip\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | tr -d '\015')
+UAMPORT=$(sed -n 's/.*name="login_status_form\[uamport\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | tr -d '\015')
+TOKEN=$(sed -n 's/.*name="login_status_form\[_token\]" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | tr -d '\015')
 
-echo "Submitting acceptance form..." | tee -a "$LOG_FILE"
-# The form POST action is typically the current URL
+echo "Submitting acceptance form to Hotsplots..." | tee -a "$LOG_FILE"
 RESPONSE_CODE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -o "$HTML_OUT" \
   --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
   --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
