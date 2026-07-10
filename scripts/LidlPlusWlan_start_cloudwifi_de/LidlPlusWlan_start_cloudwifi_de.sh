@@ -5,7 +5,7 @@ COOKIE_FILE="/tmp/wifi_cookies.txt"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
-for i in {1..20}; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if ip route | grep -q default; then
         echo "Gateway found! DHCP successful." | tee -a "$LOG_FILE"
         sleep 6
@@ -15,7 +15,7 @@ for i in {1..20}; do
 done
 
 echo "Fetching captive portal redirect URL..." | tee -a "$LOG_FILE"
-REDIRECT_RESPONSE=$(curl -k -k -v -A "$USER_AGENT" -L -c "$COOKIE_FILE" "http://neverssl.com" 2>&1)
+REDIRECT_RESPONSE=$(curl -m 15 -k -k -v -A "$USER_AGENT" -L -c "$COOKIE_FILE" "http://neverssl.com" 2>&1)
 
 # Extract the effective URL from curl -k -k stderr
 REDIRECT_URL=$(echo "$REDIRECT_RESPONSE" | sed -n 's/.*Location: //p' | tr -d '\r' | tail -n 1)
@@ -27,7 +27,7 @@ else
 fi
 
 echo "Downloading portal page to extract form fields..." | tee -a "$LOG_FILE"
-HTML=$(curl -k -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$REDIRECT_URL")
+HTML=$(curl -m 15 -k -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$REDIRECT_URL")
 
 echo "Extracting dynamic form inputs..." | tee -a "$LOG_FILE"
 # Using sed to extract values from hidden inputs
@@ -44,7 +44,7 @@ DEVICEID=$(echo "$HTML" | sed -n 's/.*name="FX_hotspotDeviceId" value="\([^"]*\)
 USERNAME=$(echo "$HTML" | sed -n 's/.*name="FX_username" value="\([^"]*\)".*/\1/p' | head -n 1)
 
 echo "Submitting login form..." | tee -a "$LOG_FILE"
-LOGIN_RESPONSE=$(curl -k -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "cbQpC=1&nasid=$NASID&mac=$MAC&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&called=$CALLED&userurl=$USERURL&sessionid=$SESSIONID&FX_username=$USERNAME&FX_password=easy&FX_loginTemplate=$TEMPLATE&FX_loginType=Easy+Login&FX_hotspotDeviceId=$DEVICEID" -X POST "$REDIRECT_URL" 2>&1)
+LOGIN_RESPONSE=$(curl -m 15 -k -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "cbQpC=1&nasid=$NASID&mac=$MAC&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&called=$CALLED&userurl=$USERURL&sessionid=$SESSIONID&FX_username=$USERNAME&FX_password=easy&FX_loginTemplate=$TEMPLATE&FX_loginType=Easy+Login&FX_hotspotDeviceId=$DEVICEID" -X POST "$REDIRECT_URL" 2>&1)
 
 echo "HTTP Response Summary: $(echo "$LOGIN_RESPONSE" | grep "HTTP/" | tail -n 1)" | tee -a "$LOG_FILE"
 

@@ -4,7 +4,7 @@ LOG_FILE="/tmp/wifi_login.log"
 echo "Starting login process..." | tee -a "$LOG_FILE"
 
 echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
-for i in {1..20}; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if ip route | grep -q default; then
         echo "Gateway found! DHCP successful." | tee -a "$LOG_FILE"
         sleep 6
@@ -19,7 +19,7 @@ COOKIE_FILE="/tmp/c.txt"
 LANDING_FILE="/tmp/landing.html"
 
 echo "Following portal redirect chain starting from NeverSSL..." | tee -a "$LOG_FILE"
-FINAL_URL=$(curl -s -L -k -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -o "$LANDING_FILE" -w "%{url_effective}" "http://neverssl.com")
+FINAL_URL=$(curl -m 15 -s -L -k -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -o "$LANDING_FILE" -w "%{url_effective}" "http://neverssl.com")
 echo "Ended up at: $FINAL_URL" | tee -a "$LOG_FILE"
 
 echo "Extracting grant_url from landing page..." | tee -a "$LOG_FILE"
@@ -31,7 +31,7 @@ if [ -z "$GRANT_URL" ]; then
 fi
 
 echo "Submitting authorization POST to: $GRANT_URL" | tee -a "$LOG_FILE"
-curl -s -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$GRANT_URL" > /dev/null
+curl -m 15 -s -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$GRANT_URL" > /dev/null
 
 echo "Checking connectivity..." | tee -a "$LOG_FILE"
 ping -c 3 8.8.8.8 >/dev/null && echo "SUCCESS: Connected to Internet." | tee -a "$LOG_FILE" && exit 0 || { echo "FAILURE: Connectivity check failed."; exit 1; }

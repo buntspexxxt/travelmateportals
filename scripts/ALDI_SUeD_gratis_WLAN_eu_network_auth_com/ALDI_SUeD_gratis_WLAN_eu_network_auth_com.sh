@@ -10,7 +10,7 @@ HTML_FILE="/tmp/portal_page.html"
 echo "Starting ALDI WiFi Multi-Stage Login..." | tee -a "$LOG_FILE"
 
 # Network Wait
-for i in {1..20}; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
         echo "Network ready." | tee -a "$LOG_FILE"
         break
@@ -19,9 +19,9 @@ for i in {1..20}; do
 done
 
 # Stage 1: Detection
-REDIRECT_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -o /dev/null -w "%{redirect_url}" http://neverssl.com)
+REDIRECT_URL=$(curl -m 15 -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -o /dev/null -w "%{redirect_url}" http://neverssl.com)
 if [ -z "$REDIRECT_URL" ]; then
-    REDIRECT_URL=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -o /dev/null -w "%{redirect_url}" http://detectportal.firefox.com/success.txt)
+    REDIRECT_URL=$(curl -m 15 -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -o /dev/null -w "%{redirect_url}" http://detectportal.firefox.com/success.txt)
 fi
 
 HOST_PORTAL=$(echo "$REDIRECT_URL" | cut -d'/' -f1-3)
@@ -30,7 +30,7 @@ SPLASH_BASE="${HOST_PORTAL}/${PATH_PORTAL}/"
 
 # Stage 2: Load Page and extract grant URL
 echo "Fetching portal landing page..." | tee -a "$LOG_FILE"
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$REDIRECT_URL" -o "$HTML_FILE"
+curl -m 15 -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$REDIRECT_URL" -o "$HTML_FILE"
 
 # Extract the specific button link from the HTML
 GRANT_URL=$(sed -n 's/.*class="button" href="\([^"]*\)".*/\1/p' "$HTML_FILE" | head -n 1 | tr -d '\015')
@@ -41,11 +41,11 @@ if [ -z "$GRANT_URL" ]; then
 fi
 
 echo "Submitting Login Request to: $GRANT_URL" | tee -a "$LOG_FILE"
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -H "Referer: $REDIRECT_URL" "$GRANT_URL" > /dev/null
+curl -m 15 -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -H "Referer: $REDIRECT_URL" "$GRANT_URL" > /dev/null
 
 # Stage 3: Verification
 echo "Verifying real Internet connectivity..."
-CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE=$(curl -m 15 -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!"
     exit 0

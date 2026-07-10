@@ -6,7 +6,7 @@ echo "$(date): Starting login script for Telekom Hotspot..." | tee -a "$LOG_FILE
 
 # 1. Wait for DHCP (IP & Gateway)
 echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
-for i in {1..20}; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if ip route | grep -q default; then
         echo "Gateway found! DHCP successful." | tee -a "$LOG_FILE"
         sleep 2
@@ -30,7 +30,7 @@ rm -f "$COOKIE_JAR"
 # -b: Send cookies (read from same cookie jar)
 # -k: Insecure (ignore certificate issues if gateway serves self-signed)
 # --connect-timeout: Limit wait time
-curl -s -L -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+curl -m 15 -s -L -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
      --connect-timeout 10 \
      --user-agent "Mozilla/5.0 (Linux x86_64; rv:109.0) Gecko/20100101 Firefox/119.0" \
      "http://detectportal.firefox.com/success.txt" > /dev/null
@@ -46,7 +46,7 @@ echo "Cookies obtained successfully." | tee -a "$LOG_FILE"
 echo "Submitting freeLogin activation..." | tee -a "$LOG_FILE"
 # Send the POST request to wlan/rest/freeLogin
 # We must use the cookies obtained in step 2
-curl -s -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
+curl -m 15 -s -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
      -k -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
      --connect-timeout 10 \
      -H "Content-Type: application/json" \

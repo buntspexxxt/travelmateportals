@@ -3,7 +3,7 @@ LOG_FILE="/tmp/portal_login.log"
 echo "Starting multi-stage login script..." | tee -a "$LOG_FILE"
 
 echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
-for i in {1..20}; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if ip route | grep -q default; then
         echo "Gateway found! DHCP successful." | tee -a "$LOG_FILE"
         sleep 6
@@ -16,16 +16,16 @@ USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 echo "Fetching initial landing page..." | tee -a "$LOG_FILE"
 # Using -v to see headers, capturing response
-REDIRECT_INFO=$(curl -k -v -A "$USER_AGENT" -L "http://neverssl.com" 2>&1)
+REDIRECT_INFO=$(curl -m 15 -k -v -A "$USER_AGENT" -L "http://neverssl.com" 2>&1)
 LANDING_URL=$(echo "$REDIRECT_INFO" | sed -n 's/.*Location: //p' | tr -d '\r' | head -n 1)
 echo "Landing URL: $LANDING_URL" | tee -a "$LOG_FILE"
 
 echo "Fetching splash page to acquire session cookies..." | tee -a "$LOG_FILE"
-PAGE_HTML=$(curl -k -v -A "$USER_AGENT" -c /tmp/c.txt -b /tmp/c.txt "$LANDING_URL")
+PAGE_HTML=$(curl -m 15 -k -v -A "$USER_AGENT" -c /tmp/c.txt -b /tmp/c.txt "$LANDING_URL")
 
 echo "Executing AJAX handshake to get Continue-Url..." | tee -a "$LOG_FILE"
 # Based on portal JS, we need to perform a HEAD request to trigger the header discovery
-HANDSHAKE=$(curl -k -v -A "$USER_AGENT" -c /tmp/c.txt -b /tmp/c.txt -X HEAD -H "X-Requested-With: XMLHttpRequest" "$LANDING_URL" 2>&1)
+HANDSHAKE=$(curl -m 15 -k -v -A "$USER_AGENT" -c /tmp/c.txt -b /tmp/c.txt -X HEAD -H "X-Requested-With: XMLHttpRequest" "$LANDING_URL" 2>&1)
 CONTINUE_URL=$(echo "$HANDSHAKE" | sed -n 's/.*Continue-Url: //p' | tr -d '\r')
 
 if [ -z "$CONTINUE_URL" ]; then
@@ -47,7 +47,7 @@ fi
 FINAL_GRANT_URL=$(echo "$GRANT_PATH" | sed "s/CONTINUE_URL_PLACEHOLDER/$CONTINUE_URL/g")
 
 echo "Submitting grant request to: $FINAL_GRANT_URL" | tee -a "$LOG_FILE"
-curl -k -v -A "$USER_AGENT" -c /tmp/c.txt -b /tmp/c.txt "$FINAL_GRANT_URL"
+curl -m 15 -k -v -A "$USER_AGENT" -c /tmp/c.txt -b /tmp/c.txt "$FINAL_GRANT_URL"
 
 echo "Verifying connectivity..." | tee -a "$LOG_FILE"
 sleep 5

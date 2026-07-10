@@ -10,7 +10,7 @@ REG_PAGE=$(mktemp)
 echo "Starting portal login sequence..." | tee -a "$LOG_FILE"
 
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
-for i in {1..20}; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
         echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
         break
@@ -19,18 +19,18 @@ for i in {1..20}; do
 done
 
 echo "Fetching initial landing page..." | tee -a "$LOG_FILE"
-curl -k -A "$USER_AGENT" -L -c "$COOKIE_FILE" -o "$REG_PAGE" "http://neverssl.com" > /dev/null 2>&1
+curl -m 15 -k -A "$USER_AGENT" -L -c "$COOKIE_FILE" -o "$REG_PAGE" "http://neverssl.com" > /dev/null 2>&1
 
 echo "Extracting registration form data..." | tee -a "$LOG_FILE"
 # The portal uses a POST to /service-platform/macauthlogin/v5/registration
 # It usually requires no complex parameters besides just the POST request to trigger the auth
 # Based on the HTML, it's a simple one-click form
 
-RESPONSE_CODE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -d "" -w "%{http_code}" -o /dev/null "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration")
+RESPONSE_CODE=$(curl -m 15 -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -d "" -w "%{http_code}" -o /dev/null "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration")
 echo "HTTP Registration Response: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..."
-CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE=$(curl -m 15 -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!"
     exit 0

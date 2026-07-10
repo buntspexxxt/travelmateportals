@@ -14,7 +14,7 @@ COOKIE_JAR="/tmp/ibis_cookies.txt"
 
 # Ensure network interfaces and DNS are ready
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
-for i in {1..20}; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
         echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
         sleep 2
@@ -32,7 +32,7 @@ rm -f "$COOKIE_JAR"
 echo "Fetching landing page..." | tee -a "$LOG_FILE"
 # The previous script used http://neverssl.com, which redirected to accor.conn4.com
 # We'll continue using that to get the initial redirection
-RESPONSE=$(curl -v -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "http://neverssl.com" 2>&1)
+RESPONSE=$(curl -m 15 -v -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "http://neverssl.com" 2>&1)
 # Extract the effective portal URL from the Location header
 PORTAL_URL=$(echo "$RESPONSE" | sed -n 's/.*[Ll]ocation: //p' | sed 's/\r//g' | head -n 1)
 # Fallback if no redirect is found
@@ -44,7 +44,7 @@ echo "Portal URL determined: $PORTAL_URL" | tee -a "$LOG_FILE"
 echo "Fetching main config..." | tee -a "$LOG_FILE"
 # The HTML content from the previous step (if available or by accessing PORTAL_URL directly)
 # For robustness, let's fetch the portal URL again in case the initial redirect was just a hint.
-HTML_BODY=$(curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "$PORTAL_URL")
+HTML_BODY=$(curl -m 15 -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "$PORTAL_URL")
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to fetch main config from $PORTAL_URL" | tee -a "$LOG_FILE"
     exit 1
@@ -63,7 +63,7 @@ echo "SCENE_PLAYER_URL: $SCENE_PLAYER_URL" | tee -a "$LOG_FILE"
 
 # Fetch player data to get the token
 echo "Fetching player data..." | tee -a "$LOG_FILE"
-PLAYER_BODY=$(curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "$SCENE_PLAYER_URL")
+PLAYER_BODY=$(curl -m 15 -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" "$SCENE_PLAYER_URL")
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to fetch player data from $SCENE_PLAYER_URL" | tee -a "$LOG_FILE"
     exit 1
@@ -79,7 +79,7 @@ echo "Extracted TOKEN: $TOKEN" | tee -a "$LOG_FILE"
 
 # Create session using the token
 echo "Creating session..." | tee -a "$LOG_FILE"
-SESSION_RESPONSE=$(curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" -X POST -d "authorization=token%3D${TOKEN}" "https://accor.conn4.com/wbs/api/v1/create-session/")
+SESSION_RESPONSE=$(curl -m 15 -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" -X POST -d "authorization=token%3D${TOKEN}" "https://accor.conn4.com/wbs/api/v1/create-session/")
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to create session." | tee -a "$LOG_FILE"
     exit 1
@@ -95,7 +95,7 @@ echo "Extracted SESSION_ID: $SESSION_ID" | tee -a "$LOG_FILE"
 
 # Finalize registration by accepting terms (this was the previous step)
 echo "Finalizing registration by accepting terms..." | tee -a "$LOG_FILE"
-REG_RESPONSE=$(curl -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" -X POST -d "authorization=session%3D${SESSION_ID}&registration_type=terms-only&registration%5Bterms%5D=1" "https://accor.conn4.com/wbs/api/v1/register/free/")
+REG_RESPONSE=$(curl -m 15 -k -c "$COOKIE_JAR" -b "$COOKIE_JAR" -A "$USER_AGENT" -X POST -d "authorization=session%3D${SESSION_ID}&registration_type=terms-only&registration%5Bterms%5D=1" "https://accor.conn4.com/wbs/api/v1/register/free/")
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to finalize registration (accept terms)." | tee -a "$LOG_FILE"
     exit 1
@@ -125,7 +125,7 @@ fi
 # --- INTERNET CONNECTIVITY CHECK ---
 
 echo "Verifying real Internet connectivity after registration..." | tee -a "$LOG_FILE"
-CHECK_CODE=$(curl -k -s -o /dev/null -w "%{{http_code}}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE=$(curl -m 15 -k -s -o /dev/null -w "%{{http_code}}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
@@ -134,7 +134,7 @@ else
     echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)" | tee -a "$LOG_FILE"
     # Attempting one final request to a known reliable site as a last resort
     echo "Performing a final check with example.com..." | tee -a "$LOG_FILE"
-    FINAL_CHECK_CODE=$(curl -k -s -o /dev/null -w "%{{http_code}}" -m 8 "http://example.com")
+    FINAL_CHECK_CODE=$(curl -m 15 -k -s -o /dev/null -w "%{{http_code}}" -m 8 "http://example.com")
     if [ "$FINAL_CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified with example.com!" | tee -a "$LOG_FILE"
         exit 0

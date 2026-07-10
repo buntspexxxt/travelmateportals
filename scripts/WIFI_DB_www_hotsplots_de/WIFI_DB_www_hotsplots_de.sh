@@ -8,7 +8,7 @@ echo "Starting Hotsplots login process..." | tee -a "$LOG_FILE"
 
 # 1. Wait for network
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
-for i in {1..20}; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
         echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
         sleep 2
@@ -23,7 +23,7 @@ UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge
 
 # 2. Get the redirect and capture parameters
 echo "Fetching portal page to extract parameters..." | tee -a "$LOG_FILE"
-REDIRECT_URL=$(curl -k -A "$UA" -L -o "$HTML_FILE" -w "%{url_effective}" "http://neverssl.com")
+REDIRECT_URL=$(curl -m 15 -k -A "$UA" -L -o "$HTML_FILE" -w "%{url_effective}" "http://neverssl.com")
 REDIRECT_URL=$(echo "$REDIRECT_URL" | tr -d '\015')
 echo "Captured Redirect URL: $REDIRECT_URL" | tee -a "$LOG_FILE"
 
@@ -41,12 +41,12 @@ echo "Extracted Challenge: $CHALLENGE" | tee -a "$LOG_FILE"
 echo "Submitting form to Hotsplots..." | tee -a "$LOG_FILE"
 POST_DATA="haveTerms=1&termsOK=on&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&userurl=$USERURL&myLogin=agb&nasid=$NASID&button=Jetzt+kostenlos+surfens"
 
-RESPONSE=$(curl -k -v -A "$UA" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -d "$POST_DATA" -X POST "https://www.hotsplots.de/auth/login.php" 2>&1)
+RESPONSE=$(curl -m 15 -k -v -A "$UA" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -d "$POST_DATA" -X POST "https://www.hotsplots.de/auth/login.php" 2>&1)
 echo "HTTP Response captured." | tee -a "$LOG_FILE"
 
 # 5. Verify connectivity
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
-CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE=$(curl -m 15 -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
     exit 0

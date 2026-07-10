@@ -14,7 +14,7 @@ echo "Starting login script for Telekom Hotspot (SSID: Telekom_hotspot_t_mobile_
 
 # CRITICAL: Waiting for IP, Gateway, and DNS to be fully assigned
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
-for i in {1..20}; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
         echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
         sleep 2
@@ -25,7 +25,7 @@ done
 
 # Check if already online
 echo "Checking if internet connectivity already exists..." | tee -a "$LOG_FILE"
-CHECK_CODE_INITIAL=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE_INITIAL=$(curl -m 15 -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE_INITIAL" = "204" ] || [ "$CHECK_CODE_INITIAL" = "200" ]; then
     echo "Already online. Exiting." | tee -a "$LOG_FILE"
     exit 0
@@ -33,15 +33,15 @@ fi
 
 # Step 1: Detect redirect without following it, to locate the captive gateway servlet
 echo "Probing http://neverssl.com for captive portal redirection..." | tee -a "$LOG_FILE"
-REDIRECT_URL=$(curl -k -o /dev/null -w "%{redirect_url}" --connect-timeout 15 -A "$USER_AGENT" "http://neverssl.com" | tr -d '\015')
+REDIRECT_URL=$(curl -m 15 -k -o /dev/null -w "%{redirect_url}" --connect-timeout 15 -A "$USER_AGENT" "http://neverssl.com" | tr -d '\015')
 
 if [ -z "$REDIRECT_URL" ]; then
     echo "No redirect header found. Accessing the page directly to see if WISPr XML is returned..." | tee -a "$LOG_FILE"
-    curl -k -c "$COOKIE_FILE" -b "$COOKIE_FILE" --connect-timeout 15 -A "$USER_AGENT" -o "$HTML_FILE" "http://neverssl.com"
+    curl -m 15 -k -c "$COOKIE_FILE" -b "$COOKIE_FILE" --connect-timeout 15 -A "$USER_AGENT" -o "$HTML_FILE" "http://neverssl.com"
 else
     echo "Redirect URL detected: $REDIRECT_URL" | tee -a "$LOG_FILE"
     echo "Fetching redirect page to capture the portal XML..." | tee -a "$LOG_FILE"
-    curl -k -c "$COOKIE_FILE" -b "$COOKIE_FILE" --connect-timeout 15 -A "$USER_AGENT" -o "$HTML_FILE" "$REDIRECT_URL"
+    curl -m 15 -k -c "$COOKIE_FILE" -b "$COOKIE_FILE" --connect-timeout 15 -A "$USER_AGENT" -o "$HTML_FILE" "$REDIRECT_URL"
 fi
 
 # Step 2: Extract the <loginurl> from the WISPr XML/HTML
@@ -62,7 +62,7 @@ echo "Submitting free login credentials to Telekom portal..." | tee -a "$LOG_FIL
 LOGIN_REFERER="https://hotspot.t-mobile.net/wlan/rest/freeLogin"
 POST_DATA="UserName=&Password=&FNAME=0&button=Login&OriginatingServer=http%3A%2F%2Fneverssl.com"
 
-curl -k -c "$COOKIE_FILE" -b "$COOKIE_FILE" \
+curl -m 15 -k -c "$COOKIE_FILE" -b "$COOKIE_FILE" \
      -X POST \
      -H "Content-Type: application/x-www-form-urlencoded" \
      -H "Referer: $LOGIN_REFERER" \
@@ -82,7 +82,7 @@ fi
 
 # CRITICAL MANDATORY VERIFICATION
 echo "Verifying real Internet connectivity..."
-CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE=$(curl -m 15 -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
     exit 0
