@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.3.1"
+# SCRIPT_VERSION="1.4.0"
 trap 'rm -f "${COOKIE_FILE:-}" "${LOG_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
@@ -23,26 +23,29 @@ perform_curl() {
 
 echo "Step 1: Identifying redirect parameters..." | tee -a "$LOG_FILE"
 EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -o /dev/null -w "%{url_effective}" "http://neverssl.com")
+# Extract query params from loginurl field to build Hotsplots auth URL
 QUERY_STRING=$(echo "$EFFECTIVE_URL" | sed -n 's/.*loginurl=https%3A%2F%2Fwww.hotsplots.de%2Fauth%2Flogin.php%3F\(.*\)/\1/p' | sed 's/%3D/=/g;s/%26/\&/g')
 
-echo "Step 2: Accessing Landing Page..." | tee -a "$LOG_FILE"
-perform_curl "http://portal.iob.de"
+echo "Step 2: Accessing Landing Page and extracting prelogin link..." | tee -a "$LOG_FILE"
+HTML=$(perform_curl -s "http://portal.iob.de")
+# Extract the specific link target for 'Online gehen'
+PRELOGIN_URL=$(echo "$HTML" | sed -n 's/.*href="\([^"]*\/prelogin\)".*/\1/p' | head -n 1)
 
-echo "Step 3: Triggering prelogin..." | tee -a "$LOG_FILE"
-perform_curl "http://192.168.44.1/prelogin"
+echo "Step 3: Triggering prelogin via $PRELOGIN_URL..." | tee -a "$LOG_FILE"
+perform_curl "$PRELOGIN_URL"
 
 echo "Step 4: Executing Hotsplots authentication..." | tee -a "$LOG_FILE"
 AUTH_URL="https://www.hotsplots.de/auth/login.php?$QUERY_STRING"
-# The portal requires the 'button' field to trigger the session
+# Submit login POST request
 RESPONSE=$(perform_curl -X POST -d "button=Login" "$AUTH_URL")
-echo "Auth Response Code: $?" | tee -a "$LOG_FILE"
+echo "Auth Response completed." | tee -a "$LOG_FILE"
 
-echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
+echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
-    echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
+    echo "SUCCESS: Internet connection verified!"
     exit 0
 else
-    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)" | tee -a "$LOG_FILE"
+    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)"
     exit 1
 fi
