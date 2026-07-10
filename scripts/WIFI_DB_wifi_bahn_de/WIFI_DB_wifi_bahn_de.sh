@@ -1,11 +1,11 @@
 #!/bin/bash
-
-# Auto-injected cleanup trap for temporary session files
-trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 # SCRIPT_VERSION="1.0.0"
+
+trap 'rm -f "${COOKIE_JAR:-}" "${HTML_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
+COOKIE_JAR="$(mktemp)"
+HTML_FILE="$(mktemp)"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-COOKIE_JAR="/tmp/db_cookies.txt"
 DOMAIN="wifi.bahn.de"
 
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
@@ -19,22 +19,19 @@ for i in {1..20}; do
 done
 
 echo "Fetching initial session cookie and CSRF token from https://${DOMAIN}/en/" | tee -a "$LOG_FILE"
-curl -v -k -A "$USER_AGENT" -c "$COOKIE_JAR" "https://${DOMAIN}/en/" > /dev/null 2>> "$LOG_FILE"
+curl -v -k -A "$USER_AGENT" -c "$COOKIE_JAR" -o "$HTML_FILE" "https://${DOMAIN}/en/" 2>> "$LOG_FILE"
 
-SEC_TOKEN=$(awk '/csrf/{print $7}' "$COOKIE_JAR" | sed "s/\r//g" | head -n 1)
+SEC_TOKEN=$(grep -o 'name="CSRFToken" value="[^"]*"' "$HTML_FILE" | sed 's/.*value="\([^"]*\)".*/\1/' | head -n 1)
 if [ -z "$SEC_TOKEN" ]; then
-    echo "Failed to extract CSRF token. Checking fallback..." | tee -a "$LOG_FILE"
-    SEC_TOKEN=$(grep -o '"CSRFToken": "[^"]*"' /tmp/db_landing.html | cut -d'"' -f4 | head -n 1)
+    SEC_TOKEN=$(grep -o '"CSRFToken":"[^"]*"' "$HTML_FILE" | cut -d'"' -f4 | head -n 1)
 fi
 echo "Extracted CSRF token: $SEC_TOKEN" | tee -a "$LOG_FILE"
 
 echo "Submitting login POST request..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -v -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
-     -H "Cookie: csrf=$SEC_TOKEN" \
-     --data "login=true&CSRFToken=$SEC_TOKEN" \
-     "https://${DOMAIN}/en/" 2>&1)
-
-echo "HTTP Response: $RESPONSE" | tee -a "$LOG_FILE"
+curl -v -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+     -H "Referer: https://${DOMAIN}/en/" \
+     --data "login=true&CSRFToken=${SEC_TOKEN}" \
+     "https://${DOMAIN}/en/" > /dev/null 2>> "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
