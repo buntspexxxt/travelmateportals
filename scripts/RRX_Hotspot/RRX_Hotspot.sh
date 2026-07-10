@@ -4,38 +4,42 @@ LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE="/tmp/portal_cookies.txt"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-echo "Starting RRX_Hotspot automation..." | tee -a "$LOG_FILE"
-
-echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
+echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
-    if ip route | grep -q default; then
-        echo "Gateway found! DHCP successful." | tee -a "$LOG_FILE"
-        sleep 6
+    if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
+        echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
+        sleep 2
         break
     fi
     sleep 1
 done
 
-echo "Accessing the initial portal trigger..." | tee -a "$LOG_FILE"
-curl -k -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "http://neverssl.com" > /tmp/portal_page.html 2>&1
+echo "Accessing initial trigger to find portal redirect..." | tee -a "$LOG_FILE"
+EFFECTIVE_URL=$(curl -k -L -w "%{url_effective}" -o /dev/null -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "http://neverssl.com")
 
-echo "Following redirect to hotspot provider (https://www.hotspots.de)..." | tee -a "$LOG_FILE"
-# We use -L to follow redirects and store the final landing page
-curl -k -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -L "https://www.hotspots.de" > /tmp/login_page.html 2>&1
+echo "Detected portal redirect to: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
 
-echo "Searching for form buttons to click..." | tee -a "$LOG_FILE"
-# Extracting potential POST action or form details if needed, but per instructions, just clicking the button is sufficient.
-# Often these portals have a form with a simple submit button.
-FORM_ACTION=$(sed -n 's/.*<form action="\([^"]*\)".*/\1/p' /tmp/login_page.html | head -n 1)
+echo "Fetching portal login page..." | tee -a "$LOG_FILE"
+HTML=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$EFFECTIVE_URL")
 
-if [ -z "$FORM_ACTION" ]; then
-    echo "No form found, assuming direct link redirect or simple GET trigger..." | tee -a "$LOG_FILE"
-else
-    echo "Submitting form to $FORM_ACTION..." | tee -a "$LOG_FILE"
-    # Per instructions, no checkboxes needed, just a trigger.
-    # Using POST to the action URL identified.
-    curl -k -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -L -d "submit=1" "$FORM_ACTION" > /tmp/final_auth.html 2>&1
+echo "Extracting form action and hidden fields..." | tee -a "$LOG_FILE"
+FORM_ACTION=$(echo "$HTML" | sed -n 's/.*<form[^>]*action="\([^"]*\)".*/\1/p' | head -n 1)
+# If action is relative, handle it
+if [[ "$FORM_ACTION" == /* ]]; then
+    BASE_URL=$(echo "$EFFECTIVE_URL" | cut -d/ -f1-3)
+    FORM_ACTION="${BASE_URL}${FORM_ACTION}"
 fi
 
-echo "Final connectivity check..." | tee -a "$LOG_FILE"
-ping -c 3 8.8.8.8 >/dev/null && { echo "Internet access successful!"; exit 0; } || { echo "No internet access."; exit 1; }
+echo "Submitting portal login form..." | tee -a "$LOG_FILE"
+# Using POST with empty credentials as per instructions for free portal
+curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -L -d "username=&password=&accept=true" "$FORM_ACTION" > /tmp/auth_response.html 2>&1
+
+echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
+    echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
+    exit 0
+else
+    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)" | tee -a "$LOG_FILE"
+    exit 1
+fi
