@@ -1,11 +1,12 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.1.0"
+# SCRIPT_VERSION="1.1.1"
 
-trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
+trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}" "${HTML_FILE2:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 COOKIE_FILE=$(mktemp)
 HTML_FILE=$(mktemp)
+HTML_FILE2=$(mktemp)
 
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
@@ -17,27 +18,20 @@ for i in {1..20}; do
     sleep 2
 done
 
-echo "Fetching landing page..." | tee -a "$LOG_FILE"
-# Extract initial redirect parameters via curl effective URL to handle dynamic login state
-EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -s -o "$HTML_FILE" -w "%\{url_effective\}" "http://neverssl.com" | tr -d '\015')
-HTML=$(cat "$HTML_FILE")
+echo "Fetching initial splash page..." | tee -a "$LOG_FILE"
+# The portal requires a cookie-enabled session. Using curl to visit the landing page to get the session cookie.
+curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_FILE" "http://neverssl.com"
 
-echo "Extracting hidden form fields from HTML..." | tee -a "$LOG_FILE"
-CHALLENGE=$(echo "$HTML" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p' | tr -d '\015')
-UAMIP=$(echo "$HTML" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p' | tr -d '\015')
-UAMPORT=$(echo "$HTML" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p' | tr -d '\015')
-USERURL=$(echo "$HTML" | sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p' | tr -d '\015')
-NASID=$(echo "$HTML" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p' | tr -d '\015')
+echo "Submitting registration form (The Cloud 'Continue' button)..." | tee -a "$LOG_FILE"
+# The form at https://service.thecloud.eu/service-platform/macauthlogin/v5/registration requires a POST request.
+# Based on the HTML, there are no hidden input fields needed besides standard session cookies.
+# We post an empty body to simulate clicking 'Continue' (or a simple form submission) as observed in 'The Cloud' portals.
+RESPONSE_CODE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -w "%{http_code}" -o "$HTML_FILE2" -d "" "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration")
 
-# The portal requires accepting terms (checkbox 'termsOK' = 'on') and 'haveTerms' = '1'
-echo "Submitting login form with terms acceptance..." | tee -a "$LOG_FILE"
-POST_DATA="haveTerms=1&termsOK=on&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&userurl=$USERURL&myLogin=agb&ll=de&nasid=$NASID&custom=1&button=kostenlos+einloggen"
-
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" "https://www.hotsplots.de/auth/login.php")
-echo "HTTP Response: $?" | tee -a "$LOG_FILE"
+echo "HTTP Response Code from registration: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..."
-CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!"
     exit 0
