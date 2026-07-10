@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.0.0"
+# SCRIPT_VERSION="1.1.0"
 trap 'rm -f "${COOKIE_FILE:-}" "${LOG_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
@@ -22,29 +22,21 @@ perform_curl() {
 }
 
 echo "Step 1: Hitting landing page to trigger redirect..." | tee -a "$LOG_FILE"
-RESPONSE=$(perform_curl -I "http://neverssl.com")
-REDIRECT_URL=$(echo "$RESPONSE" | grep -i "Location:" | sed 's/Location: //g' | sed 's/\r//g' | head -n 1 | tr -d '[:space:]')
+REDIRECT_URL=$(curl -k -L -w "%{url_effective}" -o /dev/null -A "$USER_AGENT" "http://neverssl.com")
+echo "Initial Redirect URL: $REDIRECT_URL" | tee -a "$LOG_FILE"
 
-if [ -z "$REDIRECT_URL" ]; then
-  echo "Failed to find redirect URL." | tee -a "$LOG_FILE"
-  exit 1
-fi
+echo "Step 2: Clicking 'Online gehen' link..." | tee -a "$LOG_FILE"
+# Follow the prelogin redirect to capture auth parameters
+AUTH_PAGE_HTML=$(perform_curl "http://192.168.44.1/prelogin")
 
-echo "Step 2: Following initial portal page..." | tee -a "$LOG_FILE"
-PAGE_HTML=$(perform_curl -L "$REDIRECT_URL")
-
-echo "Step 3: Clicking 'Online gehen' link..." | tee -a "$LOG_FILE"
-# The HTML contains <a href="http://192.168.44.1/prelogin" class="btn btn-primary btn-lg">Online gehen</a>
-# We follow this link to authenticate.
-perform_curl -L "http://192.168.44.1/prelogin"
-
-echo "Step 4: Submitting Hotsplots credentials (if required)..." | tee -a "$LOG_FILE"
-LOGIN_URL=$(echo "$REDIRECT_URL" | sed -n 's/.*loginurl=\(https%3a%2f%2f[^&]*\).*/\1/p' | sed 's/%3a/:/g;s/%2f/\//g')
+echo "Step 3: Extracting Hotsplots parameters..." | tee -a "$LOG_FILE"
+LOGIN_URL=$(echo "$REDIRECT_URL" | sed -n 's/.*loginurl=\([^&]*\).*/\1/p' | sed 's/%3a/:/g;s/%2f/\//g')
 CHALLENGE=$(echo "$REDIRECT_URL" | sed -n 's/.*challenge=\([^&]*\).*/\1/p')
 UAMIP=$(echo "$REDIRECT_URL" | sed -n 's/.*uamip=\([^&]*\).*/\1/p')
 UAMPORT=$(echo "$REDIRECT_URL" | sed -n 's/.*uamport=\([^&]*\).*/\1/p')
 MAC=$(echo "$REDIRECT_URL" | sed -n 's/.*mac=\([^&]*\).*/\1/p')
 
+echo "Step 4: Submitting authentication to $LOGIN_URL..." | tee -a "$LOG_FILE"
 POST_DATA="username=&password=&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&mac=$MAC&button=Login"
 perform_curl -X POST -d "$POST_DATA" "$LOGIN_URL"
 
