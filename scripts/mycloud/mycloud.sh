@@ -1,15 +1,14 @@
 #!/bin/bash
-
-# Auto-injected cleanup trap for temporary session files
-trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 # SCRIPT_VERSION="1.0.0"
-LOG_FILE="/tmp/portal_log.txt"
-echo "Starting portal login script..." | tee -a "$LOG_FILE"
 
-echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
+trap 'rm -f "${COOKIE_FILE:-}" "${HTML_OUT:-}"' EXIT
+LOG_FILE="/tmp/portal_log.txt"
+echo "Starting The Cloud portal login sequence..." | tee -a "$LOG_FILE"
+
+echo "Waiting for network..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
-        echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
+        echo "Network ready." | tee -a "$LOG_FILE"
         sleep 2
         break
     fi
@@ -20,26 +19,24 @@ USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 COOKIE_FILE=$(mktemp)
 HTML_OUT=$(mktemp)
 
-echo "Fetching captive portal landing page..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -A "$USER_AGENT" -L -c "$COOKIE_FILE" -w "%{url_effective}" -o "$HTML_OUT" "http://neverssl.com")
-echo "Effective URL: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
+echo "Fetching portal index..." | tee -a "$LOG_FILE"
+curl -k -A "$USER_AGENT" -L -c "$COOKIE_FILE" -o "$HTML_OUT" "http://neverssl.com" >/dev/null 2>&1
 
-# Extracting hidden form fields dynamically from the HTML
+# The Cloud v5 uses a registration form that usually requires accepting Terms. 
+# Extracting action URL and confirming current state.
 HTML=$(cat "$HTML_OUT")
-AP_MAC=$(echo "$HTML" | sed -n 's/.*name="ap_mac" value="\([^"]*\)".*/\1/p' | head -n 1)
-CLIENT_MAC=$(echo "$HTML" | sed -n 's/.*name="client_mac" value="\([^"]*\)".*/\1/p' | head -n 1)
-WLAN_ID=$(echo "$HTML" | sed -n 's/.*name="wlan_id" value="\([^"]*\)".*/\1/p' | head -n 1)
-URL_PARAM=$(echo "$HTML" | sed -n 's/.*name="url" value="\([^"]*\)".*/\1/p' | head -n 1)
+ACTION_URL=$(echo "$HTML" | sed -n 's/.*id="registration" method="POST" action="\([^"]*\)".*/\1/p')
 
-echo "Extracted fields: AP_MAC=$AP_MAC, CLIENT_MAC=$CLIENT_MAC, WLAN_ID=$WLAN_ID" | tee -a "$LOG_FILE"
+if [ -z "$ACTION_URL" ]; then
+    echo "Could not find registration form action URL." | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-# The form uses auth_method=passphrase, but we need to accept TOS
-# Creating POST data. The portal requires 'tos' checkbox and auth_method
-POST_DATA="ap_mac=$AP_MAC&client_mac=$CLIENT_MAC&wlan_id=$WLAN_ID&url=$(echo -n "$URL_PARAM" | sed 's/\//%2F/g; s/\:/%3A/g; s/\&/%26/g')&tos=true&auth_method=passphrase"
+echo "Submitting acceptance POST to $ACTION_URL..." | tee -a "$LOG_FILE"
+# Sending empty payload as portal is 'one-click' acceptance based on existing session cookie
+RESPONSE_CODE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -w "%{http_code}" -o /dev/null -d "tos=true" "$ACTION_URL")
 
-echo "Submitting login form..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" -w "%{http_code}" -o /dev/null "https://portal.eu.mist.com/logon")
-echo "HTTP Response: $RESPONSE" | tee -a "$LOG_FILE"
+echo "HTTP Response: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
@@ -47,6 +44,6 @@ if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
     echo "SUCCESS: Internet connection verified!"
     exit 0
 else
-    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)"
+    echo "ERROR: Portal failed. HTTP Check: $CHECK_CODE"
     exit 1
 fi
