@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.2.0"
+# SCRIPT_VERSION="1.3.0"
 trap 'rm -f "${COOKIE_FILE:-}" "${LOG_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
@@ -21,19 +21,29 @@ perform_curl() {
     curl -k -v -L -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$@"
 }
 
-echo "Step 1: Fetching initial landing page and extract redirect target..." | tee -a "$LOG_FILE"
-REDIRECT_URL=$(curl -k -L -w "%{url_effective}" -o /dev/null -A "$USER_AGENT" "http://neverssl.com")
+echo "Step 1: Capturing redirect URL from connectivity check..." | tee -a "$LOG_FILE"
+# Capture initial redirect to identify the loginurl parameters provided by the gateway
+REDIRECT_OUTPUT=$(curl -k -L -v -A "$USER_AGENT" -o /dev/null -w "%{url_effective}" "http://neverssl.com" 2>&1)
+REDIRECT_URL=$(echo "$REDIRECT_OUTPUT" | grep "Location:" | tail -n 1 | sed 's/Location: //g' | tr -d '\015')
+[ -z "$REDIRECT_URL" ] && REDIRECT_URL="http://portal.iob.de"
 
-echo "Step 2: Accessing /prelogin to negotiate Hotsplots session..." | tee -a "$LOG_FILE"
-# The portal requires interaction with the Hotsplots redirect URL found in the initial landing redirect
-LOGIN_URL=$(echo "$REDIRECT_URL" | sed -n 's/.*loginurl=\([^&]*\).*/\1/p' | tr -d '\015' | sed 's/%3a/:/g;s/%2f/\//g')
+echo "Step 2: Accessing Landing Page to find 'Online gehen' link..." | tee -a "$LOG_FILE"
+HTML_CONTENT=$(curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$REDIRECT_URL")
 
-echo "Step 3: Submitting initial credentials/trigger to Hotsplots..." | tee -a "$LOG_FILE"
-# Hotsplots login typically expects these params extracted from the URL query string
-POST_DATA="username=&password=&button=Login&$(echo "$REDIRECT_URL" | grep -o '?.*' | cut -c 2-)"
+echo "Step 3: Extracting login trigger link..." | tee -a "$LOG_FILE"
+LOGIN_TRIGGER=$(echo "$HTML_CONTENT" | sed -n 's/.*href="\([^"]*prelogin[^"]*\)".*/\1/p' | head -n 1)
+if [ -z "$LOGIN_TRIGGER" ]; then
+    LOGIN_TRIGGER="http://192.168.44.1/prelogin"
+fi
 
-RESPONSE=$(perform_curl -X POST -d "$POST_DATA" "$LOGIN_URL")
-echo "HTTP Response Received." | tee -a "$LOG_FILE"
+echo "Step 4: Following prelogin trigger..." | tee -a "$LOG_FILE"
+perform_curl -L "$LOGIN_TRIGGER"
+
+echo "Step 5: Finalizing Hotsplots auth flow..." | tee -a "$LOG_FILE"
+# The portal logic relies on the initial challenge/session parameters from the redirect
+QUERY_PARAMS=$(echo "$REDIRECT_URL" | sed -n 's/.*\?\(.*\)/\1/p')
+AUTH_URL="https://www.hotsplots.de/auth/login.php?$QUERY_PARAMS"
+perform_curl -X POST -d "button=Login" "$AUTH_URL"
 
 echo "Verifying real Internet connectivity..."
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
