@@ -1,5 +1,5 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.2.0"
+# SCRIPT_VERSION="1.3.0"
 
 trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
@@ -20,8 +20,14 @@ HTML_FILE=$(mktemp)
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 echo "Step 1: Detecting captive portal redirect URL..." | tee -a "$LOG_FILE"
-REDIRECT_URL=$(curl -k -o /dev/null -w "%{redirect_url}" "http://neverssl.com")
+REDIRECT_URL=$(curl -k --connect-timeout 10 --max-time 15 -o /dev/null -w "%{redirect_url}" "http://neverssl.com")
 REDIRECT_URL=$(echo "$REDIRECT_URL" | tr -d '\015')
+
+if [ -z "$REDIRECT_URL" ]; then
+    echo "neverssl.com did not redirect. Trying alternate detection URL..." | tee -a "$LOG_FILE"
+    REDIRECT_URL=$(curl -k --connect-timeout 10 --max-time 15 -o /dev/null -w "%{redirect_url}" "http://detectportal.firefox.com/success.txt")
+    REDIRECT_URL=$(echo "$REDIRECT_URL" | tr -d '\015')
+fi
 
 if [ -z "$REDIRECT_URL" ]; then
     echo "No redirect URL detected, using default landing page..." | tee -a "$LOG_FILE"
@@ -31,22 +37,27 @@ else
 fi
 
 HOST=$(echo "$REDIRECT_URL" | cut -d'/' -f1-3)
-if [ -z "$HOST" ]; then
+if [ -z "$HOST" ] || ! echo "$HOST" | grep -q "^http"; then
     HOST="https://public.hotspot.koeln"
 fi
 echo "Extracted Host: $HOST" | tee -a "$LOG_FILE"
 
 echo "Step 2: Fetching the captive portal landing page..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -L -w "%{url_effective}" -o "$HTML_FILE" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -A "$USER_AGENT" "$REDIRECT_URL")
+EFFECTIVE_URL=$(curl -k -L --connect-timeout 10 --max-time 25 -w "%{url_effective}" -o "$HTML_FILE" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -A "$USER_AGENT" "$REDIRECT_URL")
 EFFECTIVE_URL=$(echo "$EFFECTIVE_URL" | tr -d '\015')
 echo "Effective URL after redirect: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
 
-# Extract query string to preserve session / MAC parameters
+if [ ! -s "$HTML_FILE" ]; then
+    echo "Failed to fetch landing page. Retrying with direct URL..." | tee -a "$LOG_FILE"
+    REDIRECT_URL="https://public.hotspot.koeln/cp/guqs6n9d"
+    EFFECTIVE_URL=$(curl -k -L --connect-timeout 10 --max-time 25 -w "%{url_effective}" -o "$HTML_FILE" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -A "$USER_AGENT" "$REDIRECT_URL")
+    EFFECTIVE_URL=$(echo "$EFFECTIVE_URL" | tr -d '\015')
+fi
+
 QUERY_STRING=$(echo "$EFFECTIVE_URL" | grep -o '?.*')
 echo "Extracted Query String: $QUERY_STRING" | tee -a "$LOG_FILE"
 
-# Extract form action dynamically using POSIX sed
-FORM_ACTION=$(sed -n 's/.*action="\([^"]*\)".*/\1/p' "$HTML_FILE" | head -n1)
+FORM_ACTION=$(sed -n 's/.*action="\([^"]*\)".*/\1/p' "$HTML_FILE" | head -n1 | tr -d '\015')
 if [ -z "$FORM_ACTION" ]; then
     FORM_ACTION="/login"
 fi
@@ -57,7 +68,6 @@ else
     LOGIN_URL="$FORM_ACTION"
 fi
 
-# Append query string safely
 if [ -n "$QUERY_STRING" ]; then
     if echo "$LOGIN_URL" | grep -q "?"; then
         LOGIN_URL="${LOGIN_URL}&${QUERY_STRING#?}"
@@ -67,19 +77,18 @@ if [ -n "$QUERY_STRING" ]; then
 fi
 echo "Determined Login URL: $LOGIN_URL" | tee -a "$LOG_FILE"
 
-# Extract and simulate click logs if present
-CLICK_LOG_PATH=$(sed -n 's/.*data-click-logs="\([^"]*\)".*/\1/p' "$HTML_FILE" | head -n1)
+CLICK_LOG_PATH=$(sed -n 's/.*data-click-logs="\([^"]*\)".*/\1/p' "$HTML_FILE" | head -n1 | tr -d '\015')
 if [ -n "$CLICK_LOG_PATH" ]; then
     CLICK_LOG_URL="${HOST}${CLICK_LOG_PATH}"
     echo "Step 3: Simulating click log 'load' event..." | tee -a "$LOG_FILE"
-    curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
+    curl -k --connect-timeout 8 --max-time 15 -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
       -d "action=load" \
       -d "itemType=landing_page" \
       -d "itemValue=start" \
       "$CLICK_LOG_URL"
 
     echo "Step 4: Simulating click log 'connect' event..." | tee -a "$LOG_FILE"
-    curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
+    curl -k --connect-timeout 8 --max-time 15 -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
       -d "itemType=landing_page" \
       -d "itemValue=connect" \
       -d "itemAdditional=oneclick" \
@@ -87,7 +96,7 @@ if [ -n "$CLICK_LOG_PATH" ]; then
 fi
 
 echo "Step 5: Submitting login form and following redirect..." | tee -a "$LOG_FILE"
-FINAL_URL=$(curl -k -L -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
+FINAL_URL=$(curl -k -L --connect-timeout 15 --max-time 30 -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
   -d "login=oneclick" \
   -w "%{url_effective}" \
   -o /dev/null \
