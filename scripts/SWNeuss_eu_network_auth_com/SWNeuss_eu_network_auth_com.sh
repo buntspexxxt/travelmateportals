@@ -1,47 +1,57 @@
 #!/bin/bash
+
+# Auto-injected cleanup trap for temporary session files
+trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
+# SCRIPT_VERSION="1.0.0"
 LOG_FILE="/tmp/portal_login.log"
+COOKIE_FILE=$(mktemp)
 echo "Starting login script..." | tee -a "$LOG_FILE"
 
-# Wait for DHCP
-echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
+echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
-    if ip route | grep -q default; then
-        echo "Gateway found! DHCP successful." | tee -a "$LOG_FILE"
-        sleep 6
+    if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
+        echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
+        sleep 2
         break
     fi
     sleep 1
 done
 
-# Detect portal redirect
 CHECK_URL="http://neverssl.com"
-echo "Checking connectivity to detect redirect..." | tee -a "$LOG_FILE"
-REDIRECT_RESPONSE=$(curl -v -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "$CHECK_URL" 2>&1)
-LANDING_URL=$(echo "$REDIRECT_RESPONSE" | grep -i "Location:" | sed -n 's/.*Location: //p' | tr -d '\r')
+echo "Detecting portal redirect..." | tee -a "$LOG_FILE"
+REDIRECT_URL=$(curl -k -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -w "%{url_effective}" -o /dev/null -s "$CHECK_URL" | tr -d '\015')
 
-if [ -z "$LANDING_URL" ]; then
-    echo "No redirect found. Already connected?" | tee -a "$LOG_FILE"
+if [[ "$REDIRECT_URL" == "$CHECK_URL" ]]; then
+    echo "No redirect detected. Already online." | tee -a "$LOG_FILE"
     exit 0
 fi
 
-echo "Landing URL: $LANDING_URL" | tee -a "$LOG_FILE"
+echo "Redirect detected to: $REDIRECT_URL" | tee -a "$LOG_FILE"
+BASE_URL=$(echo "$REDIRECT_URL" | cut -d'?' -f1)
+QUERY_STRING=$(echo "$REDIRECT_URL" | grep -o '\?.*' | cut -c 2-)
 
-# Extract base path and query parameters
-BASE_URL=$(echo "$LANDING_URL" | cut -d'?' -f1)
-QUERY_PARAMS=$(echo "$LANDING_URL" | grep -o '\?.*')
-GRANT_URL=$(echo "$BASE_URL" | sed 's/\/$/grant/')
+echo "Fetching portal HTML to initialize session..." | tee -a "$LOG_FILE"
+HTML_CONTENT=$(curl -k -L -A "Mozilla/5.0" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$REDIRECT_URL")
 
-echo "Executing AJAX grant request to extract Continue-Url..." | tee -a "$LOG_FILE"
-# We use the HEAD request logic from the HTML source to fetch the Continue-Url
-CURL_OUT=$(curl -v -I -A "Mozilla/5.0" -H "X-Requested-With: XMLHttpRequest" "$BASE_URL$QUERY_PARAMS" 2>&1)
-CONTINUE_URL=$(echo "$CURL_OUT" | grep -i "Continue-Url:" | awk '{print $2}' | tr -d '\r')
+echo "Requesting Grant URL via HEAD to obtain Continue-Url header..." | tee -a "$LOG_FILE"
+CURL_OUT=$(curl -k -I -A "Mozilla/5.0" -H "X-Requested-With: XMLHttpRequest" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$BASE_URL?$QUERY_STRING" 2>&1)
+CONTINUE_URL=$(echo "$CURL_OUT" | grep -i "Continue-Url:" | sed 's/.*Continue-Url: \([^\r]*\).*/\1/' | tr -d '\015')
 
-echo "Final Grant URL Construction..." | tee -a "$LOG_FILE"
-FINAL_GRANT_URL="$GRANT_URL?continue_url=$CONTINUE_URL"
+if [ -z "$CONTINUE_URL" ]; then
+    echo "Failed to extract Continue-Url. Aborting." | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-echo "Submitting request to: $FINAL_GRANT_URL" | tee -a "$LOG_FILE"
-RESPONSE=$(curl -v -L -A "Mozilla/5.0" "$FINAL_GRANT_URL" 2>&1)
-echo "HTTP Response Received." | tee -a "$LOG_FILE"
+FINAL_URL="$BASE_URL/grant?continue_url=$CONTINUE_URL"
+echo "Submitting final authentication: $FINAL_URL" | tee -a "$LOG_FILE"
+RESPONSE=$(curl -k -v -A "Mozilla/5.0" -c "$COOKIE_FILE" -b "$COOKIE_FILE" "$FINAL_URL" 2>&1)
 
-# Final check
-ping -c 3 8.8.8.8 >/dev/null && echo "Success: Internet access verified." | tee -a "$LOG_FILE" || { echo "Failed: Connectivity check failed." | tee -a "$LOG_FILE"; exit 1; }
+echo "Verifying real Internet connectivity..."
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
+    echo "SUCCESS: Internet connection verified!"
+    exit 0
+else
+    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)"
+    exit 1
+fi
