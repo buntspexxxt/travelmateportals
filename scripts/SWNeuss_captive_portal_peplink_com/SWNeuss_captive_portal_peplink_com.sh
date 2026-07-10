@@ -12,21 +12,17 @@ for i in {1..20}; do
 done
 
 echo "Fetching initial redirect..." | tee -a "$LOG_FILE"
-REDIRECT_URL=$(curl -k -v -A "$USER_AGENT" -o /dev/null -w "%{redirect_url}" "http://connectivitycheck.gstatic.com/generate_204" 2>&1 | grep "Location:" | sed 's/.*Location: //g' | sed 's/\\r//g')
+REDIRECT_URL=$(curl -k -A "$USER_AGENT" -o /dev/null -w "%{redirect_url}" "http://neverssl.com" | tr -d '\015')
 HOST=$(echo "$REDIRECT_URL" | cut -d/ -f1-3)
-
-echo "Performing initial session resume..." | tee -a "$LOG_FILE"
-# Extract query params from redirect to resume
 QUERY=$(echo "$REDIRECT_URL" | sed -n 's/.*?\(.*\)/\1/p')
-SESSION_URL="$HOST/cp/session/resume?$QUERY"
 
-SESSION_DATA=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$SESSION_URL")
-echo "Session Response: $SESSION_DATA" | tee -a "$LOG_FILE"
+echo "Requesting session state..." | tee -a "$LOG_FILE"
+SESSION_JSON=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -G "$HOST/cp/session/resume" --data-urlencode "client_mac=$(echo $QUERY | sed -n 's/.*client_mac=\([^&]*\).*/\1/p')" --data-urlencode "sn=$(echo $QUERY | sed -n 's/.*sn=\([^&]*\).*/\1/p')" --data-urlencode "ssid=$(echo $QUERY | sed -n 's/.*ssid=\([^&]*\).*/\1/p')" --data-urlencode "time=$(echo $QUERY | sed -n 's/.*time=\([^&]*\).*/\1/p')" --data-urlencode "cp_id=$(echo $QUERY | sed -n 's/.*cp_id=\([^&]*\).*/\1/p')" --data-urlencode "checksum=$(echo $QUERY | sed -n 's/.*checksum=\([^&]*\).*/\1/p')" --data-urlencode "_=$(date +%s)")
+echo "Response: $SESSION_JSON" | tee -a "$LOG_FILE"
 
-# The portal logic uses a resume/login flow. We construct the login request.
-# Peplink portals often require a specific login hit if the initial resume returns a session object.
-echo "Submitting Login Request..." | tee -a "$LOG_FILE"
-LOGIN_URL="$HOST/cp/login?resume=true&command=login&lang=en&$QUERY&_=$(date +%s)"
+echo "Initiating final login..." | tee -a "$LOG_FILE"
+# Based on the provided JS logic, we construct the login URL using existing parameters
+LOGIN_URL="$HOST/cp/login?$QUERY"
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$LOGIN_URL"
 
 echo "Verifying real Internet connectivity..."
