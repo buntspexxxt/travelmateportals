@@ -1,11 +1,15 @@
 #!/bin/bash
+
+# Auto-injected cleanup trap for temporary session files
+trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 # SCRIPT_VERSION="1.0.0"
 LOG_FILE="/tmp/portal_log.txt"
-echo "Starting login script..." | tee -a "$LOG_FILE"
+COOKIE_FILE=$(mktemp)
+echo "Starting RRX login script..." | tee -a "$LOG_FILE"
 
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 for i in {1..20}; do
-    if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
+    if ip route | grep -q default && nslookup portal.iob.de >/dev/null 2>&1; then
         echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
         sleep 2
         break
@@ -13,28 +17,16 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "Fetching initial redirect to identify CoovaChilli parameters..." | tee -a "$LOG_FILE"
-# Extract the login URL from the portal redirect
-REDIRECT_HTML=$(curl -k -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -w "%{url_effective}" -o /dev/null "http://neverssl.com")
+echo "Initiating portal sequence..." | tee -a "$LOG_FILE"
+# First step: The portal redirects to the landing page which contains the /prelogin link
+# We follow redirects and capture cookies
+RESPONSE_CODE=$(curl -k -v -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -c "$COOKIE_FILE" -o /dev/null -w "%{http_code}" "http://192.168.44.1")
+echo "Landing Page HTTP Status: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
-echo "Effective URL: $REDIRECT_HTML" | tee -a "$LOG_FILE"
-
-# Extract the login URL query string from the redirect (Hotsplots auth URL)
-LOGIN_URL=$(echo "$REDIRECT_HTML" | sed -n 's/.*loginurl=\([^&]*\).*/\1/p' | sed 's/%3a/:/g;s/%2f/\//g')
-
-if [ -z "$LOGIN_URL" ]; then
-    echo "Failed to extract LOGIN_URL, falling back to standard CoovaChilli check" | tee -a "$LOG_FILE"
-    exit 1
-fi
-
-echo "Found Login URL: $LOGIN_URL" | tee -a "$LOG_FILE"
-
-echo "Submitting acceptance request to Hotsplots..." | tee -a "$LOG_FILE"
-# The portal requires a POST to the extracted login URL (res=confirm)
-# We append necessary parameters if they exist in the redirect string
-RESPONSE=$(curl -k -v -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -d "res=confirm&accept=Akzeptieren" "$LOGIN_URL")
-
-echo "HTTP Response captured." | tee -a "$LOG_FILE"
+echo "Following /prelogin link..." | tee -a "$LOG_FILE"
+# Based on the provided HTML, the next step is a GET to /prelogin
+FINAL_URL=$(curl -k -v -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -w "%{url_effective}" -o /dev/null "http://192.168.44.1/prelogin")
+echo "Effective URL after prelogin: $FINAL_URL" | tee -a "$LOG_FILE"
 
 sleep 5
 
