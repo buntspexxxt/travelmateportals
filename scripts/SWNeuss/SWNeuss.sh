@@ -1,11 +1,13 @@
+#!/bin/sh
 
 # Auto-injected cleanup trap for temporary session files
 trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
-#!/bin/sh
 # SCRIPT_VERSION="1.0.0"
 LOG_FILE="/tmp/portal_login.log"
-echo "Starting login script..." | tee -a "$LOG_FILE"
+COOKIE_FILE=$(mktemp)
+echo "Starting multi-stage Peplink login script..." | tee -a "$LOG_FILE"
 
+# Network check
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 20 ]; do
@@ -19,27 +21,25 @@ while [ $i -le 20 ]; do
 done
 
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-COOKIE_FILE=$(mktemp)
 
+# Get initial redirect and extract dynamic parameters from URL
 echo "Fetching redirect URL..." | tee -a "$LOG_FILE"
-REDIRECT_URL=$(curl -k -L -w "%{url_effective}" -o /dev/null -A "$USER_AGENT" -m 15 "http://neverssl.com")
-REDIRECT_URL=$(echo "$REDIRECT_URL" | tr -d '\015')
-echo "Effective URL: $REDIRECT_URL" | tee -a "$LOG_FILE"
+EFFECTIVE_URL=$(curl -k -L -w "%{url_effective}" -o /dev/null -A "$USER_AGENT" -m 15 "http://neverssl.com")
+EFFECTIVE_URL=$(echo "$EFFECTIVE_URL" | tr -d '\015')
+QUERY_STRING=$(echo "$EFFECTIVE_URL" | sed -n 's/^[^?]*?\(.*\)/\1/p')
+HOST_BASE=$(echo "$EFFECTIVE_URL" | cut -d'/' -f1-3)
 
-QUERY_STRING=$(echo "$REDIRECT_URL" | sed -n 's/^[^?]*?\(.*\)/\1/p')
-HOST_BASE=$(echo "$REDIRECT_URL" | cut -d'/' -f1-3)
+# Stage 1: Attempt to resume session
+echo "Stage 1: Attempting to resume session via API..." | tee -a "$LOG_FILE"
+API_URL="${HOST_BASE}/cp/session/resume"
+JSON_RESPONSE=$(curl -k -A "$USER_AGENT" -m 15 -c "$COOKIE_FILE" -b "$COOKIE_FILE" -G -d "$QUERY_STRING" "$API_URL")
+echo "API Response: $JSON_RESPONSE" | tee -a "$LOG_FILE"
 
-echo "Submitting session resume request..." | tee -a "$LOG_FILE"
-# Extract base domain to construct session API URL
-SESSION_API="${HOST_BASE}/cp/session/resume"
-echo "API Endpoint: $SESSION_API" | tee -a "$LOG_FILE"
-
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -m 15 -c "$COOKIE_FILE" -b "$COOKIE_FILE" -G -d "$QUERY_STRING" "$SESSION_API")
-echo "Response received." | tee -a "$LOG_FILE"
-
-echo "Attempting to trigger login command..." | tee -a "$LOG_FILE"
+# Stage 2: Login
+# The JS logic indicates the final action is a GET/POST to /cp/login with the query parameters
+echo "Stage 2: Submitting final login request..." | tee -a "$LOG_FILE"
 LOGIN_URL="${HOST_BASE}/cp/login"
-curl -k -v -A "$USER_AGENT" -m 15 -c "$COOKIE_FILE" -b "$COOKIE_FILE" -G -d "$QUERY_STRING" -d "command=login" "$LOGIN_URL" | tee -a "$LOG_FILE"
+curl -k -v -A "$USER_AGENT" -m 15 -c "$COOKIE_FILE" -b "$COOKIE_FILE" -G -d "$QUERY_STRING" -d "command=login" "$LOGIN_URL" >> "$LOG_FILE" 2>&1
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
