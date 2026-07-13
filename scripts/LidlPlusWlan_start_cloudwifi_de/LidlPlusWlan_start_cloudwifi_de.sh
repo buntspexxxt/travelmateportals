@@ -1,16 +1,17 @@
-#!/bin/bash
-# SCRIPT_VERSION="1.0.0"
+#!/bin/sh
+# SCRIPT_VERSION="1.1.0"
 
 LOG_FILE="/tmp/wifi_login.log"
-COOKIE_FILE="/tmp/wifi_cookies.txt"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+COOKIE_FILE=$(mktemp)
+trap 'rm -f "$COOKIE_FILE"' EXIT
 
-echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
+echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 20 ]; do
-    if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
-        echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
-        sleep 2
+    if ip route | grep -q default; then
+        echo "Gateway found! DHCP successful." | tee -a "$LOG_FILE"
+        sleep 6
         break
     fi
     sleep 1
@@ -18,37 +19,63 @@ while [ $i -le 20 ]; do
 done
 
 echo "Fetching captive portal redirect URL..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -w "%{url_effective}" -o /dev/null -m 15 "http://neverssl.com")
-echo "Initial URL: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
+REDIRECT_RESPONSE=$(curl -m 15 -k -v -A "$USER_AGENT" -L -c "$COOKIE_FILE" "http://neverssl.com" 2>&1)
 
-echo "Downloading portal page..." | tee -a "$LOG_FILE"
-HTML=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 "$EFFECTIVE_URL")
+# Extract the effective URL from curl Location headers
+REDIRECT_URL=$(echo "$REDIRECT_RESPONSE" | sed -n 's/.*Location: //p' | tr -d '\r' | tail -n 1)
+if [ -z "$REDIRECT_URL" ]; then
+    REDIRECT_URL="https://start.cloudwifi.de/"
+    echo "Could not extract redirect, using default: $REDIRECT_URL" | tee -a "$LOG_FILE"
+else
+    echo "Redirect URL: $REDIRECT_URL" | tee -a "$LOG_FILE"
+fi
 
-echo "Extracting hidden form fields..." | tee -a "$LOG_FILE"
-NASID=$(echo "$HTML" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p' | head -n 1)
-MAC=$(echo "$HTML" | sed -n 's/.*name="mac" value="\([^"]*\)".*/\1/p' | head -n 1)
-CHALLENGE=$(echo "$HTML" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p' | head -n 1)
-SESSIONID=$(echo "$HTML" | sed -n 's/.*name="sessionid" value="\([^"]*\)".*/\1/p' | head -n 1)
-UAMIP=$(echo "$HTML" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p' | head -n 1)
-UAMPORT=$(echo "$HTML" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p' | head -n 1)
-CALLED=$(echo "$HTML" | sed -n 's/.*name="called" value="\([^"]*\)".*/\1/p' | head -n 1)
-USERURL=$(echo "$HTML" | sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p' | head -n 1)
-TEMPLATE=$(echo "$HTML" | sed -n 's/.*name="FX_loginTemplate" value="\([^"]*\)".*/\1/p' | head -n 1)
-DEVICEID=$(echo "$HTML" | sed -n 's/.*name="FX_hotspotDeviceId" value="\([^"]*\)".*/\1/p' | head -n 1)
-USERNAME=$(echo "$HTML" | sed -n 's/.*name="FX_username" value="\([^"]*\)".*/\1/p' | head -n 1)
+echo "Downloading portal page to extract form fields..." | tee -a "$LOG_FILE"
+HTML=$(curl -m 15 -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$REDIRECT_URL")
 
-echo "Submitting 'Easy Login' POST request..." | tee -a "$LOG_FILE"
-POST_DATA="cbQpC=1&nasid=$NASID&mac=$MAC&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&called=$CALLED&userurl=$USERURL&sessionid=$SESSIONID&FX_username=$USERNAME&FX_password=easy&FX_loginTemplate=$TEMPLATE&FX_loginType=Easy+Login&FX_hotspotDeviceId=$DEVICEID"
+echo "Extracting dynamic form inputs..." | tee -a "$LOG_FILE"
+decode_html() {
+    echo "$1" | sed -e 's/\&amp;/\&/g' -e 's/\&#x3D;/=/g' -e 's/\&quot;/"/g' -e 's/\&apos;/'\''/g' -e 's/\&lt;/</g' -e 's/\&gt;/>/g'
+}
 
-LOGIN_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" -m 15 -L "$EFFECTIVE_URL")
-echo "Portal login complete." | tee -a "$LOG_FILE"
+NASID=$(decode_html "$(echo "$HTML" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p' | head -n 1)")
+MAC=$(decode_html "$(echo "$HTML" | sed -n 's/.*name="mac" value="\([^"]*\)".*/\1/p' | head -n 1)")
+CHALLENGE=$(decode_html "$(echo "$HTML" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p' | head -n 1)")
+SESSIONID=$(decode_html "$(echo "$HTML" | sed -n 's/.*name="sessionid" value="\([^"]*\)".*/\1/p' | head -n 1)")
+UAMIP=$(decode_html "$(echo "$HTML" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p' | head -n 1)")
+UAMPORT=$(decode_html "$(echo "$HTML" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p' | head -n 1)")
+CALLED=$(decode_html "$(echo "$HTML" | sed -n 's/.*name="called" value="\([^"]*\)".*/\1/p' | head -n 1)")
+USERURL=$(decode_html "$(echo "$HTML" | sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p' | head -n 1)")
+TEMPLATE=$(decode_html "$(echo "$HTML" | sed -n 's/.*name="FX_loginTemplate" value="\([^"]*\)".*/\1/p' | head -n 1)")
+DEVICEID=$(decode_html "$(echo "$HTML" | sed -n 's/.*name="FX_hotspotDeviceId" value="\([^"]*\)".*/\1/p' | head -n 1)")
+USERNAME=$(decode_html "$(echo "$HTML" | sed -n 's/.*name="FX_username" value="\([^"]*\)".*/\1/p' | head -n 1)")
 
-echo "Verifying real Internet connectivity..."
-CHECK_CODE=$(curl -k -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+echo "Submitting login form..." | tee -a "$LOG_FILE"
+LOGIN_RESPONSE=$(curl -m 15 -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
+  --data-urlencode "cbQpC=1" \
+  --data-urlencode "nasid=$NASID" \
+  --data-urlencode "mac=$MAC" \
+  --data-urlencode "challenge=$CHALLENGE" \
+  --data-urlencode "uamip=$UAMIP" \
+  --data-urlencode "uamport=$UAMPORT" \
+  --data-urlencode "called=$CALLED" \
+  --data-urlencode "userurl=$USERURL" \
+  --data-urlencode "sessionid=$SESSIONID" \
+  --data-urlencode "FX_username=$USERNAME" \
+  --data-urlencode "FX_password=easy" \
+  --data-urlencode "FX_loginTemplate=$TEMPLATE" \
+  --data-urlencode "FX_loginType=Easy Login" \
+  --data-urlencode "FX_hotspotDeviceId=$DEVICEID" \
+  -X POST "$REDIRECT_URL" 2>&1)
+
+echo "HTTP Response Summary: $(echo "$LOGIN_RESPONSE" | grep "HTTP/" | tail -n 1)" | tee -a "$LOG_FILE"
+
+echo "Verifying connectivity..." | tee -a "$LOG_FILE"
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
-    echo "SUCCESS: Internet connection verified!"
+    echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
     exit 0
 else
-    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)"
+    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)" | tee -a "$LOG_FILE"
     exit 1
 fi
