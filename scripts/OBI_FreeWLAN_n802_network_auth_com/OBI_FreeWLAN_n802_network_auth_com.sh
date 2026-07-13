@@ -1,4 +1,11 @@
 #!/bin/bash
+
+# SCRIPT_VERSION="1.1.0"
+
+check_internet() {
+    curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | grep -qE '204|200'
+}
+
 LOG_FILE="/tmp/portal_login.log"
 echo "Starting multi-stage login script..." | tee -a "$LOG_FILE"
 
@@ -51,4 +58,4 @@ curl -m 15 -k -v -A "$USER_AGENT" -c /tmp/c.txt -b /tmp/c.txt "$FINAL_GRANT_URL"
 
 echo "Verifying connectivity..." | tee -a "$LOG_FILE"
 sleep 5
-ping -c 3 8.8.8.8 >/dev/null && echo "Successfully logged in!" && exit 0 || echo "Login failed or no internet." && exit 1
+check_internet&& echo "Successfully logged in!" && exit 0 || echo "Login failed or no internet." && exit 1

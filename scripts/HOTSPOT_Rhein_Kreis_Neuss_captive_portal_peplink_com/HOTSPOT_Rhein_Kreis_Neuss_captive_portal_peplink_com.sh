@@ -1,4 +1,11 @@
 #!/bin/bash
+
+# SCRIPT_VERSION="1.1.0"
+
+check_internet() {
+    curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | grep -qE '204|200'
+}
+
 LOG_FILE=/tmp/portal_login.log
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
@@ -42,4 +49,4 @@ curl -m 15 -v -A "$UA" -b /tmp/cookies.txt "$LOGIN_URL"
 
 # Final Connectivity Check
 echo "Verifying connectivity..."
-ping -c 3 8.8.8.8 >/dev/null && echo "Login Successful!" && exit 0 || exit 1
+check_internet&& echo "Login Successful!" && exit 0 || exit 1

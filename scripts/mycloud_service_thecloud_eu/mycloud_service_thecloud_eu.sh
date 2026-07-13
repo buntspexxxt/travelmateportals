@@ -1,4 +1,11 @@
 #!/bin/bash
+
+# SCRIPT_VERSION="1.1.0"
+
+check_internet() {
+    curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | grep -qE '204|200'
+}
+
 LOG_FILE="/tmp/portal_login.log"
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 COOKIE_FILE="/tmp/portal_cookies.txt"
@@ -17,7 +24,7 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
 done
 
 # Check if already online
-if ping -c 3 8.8.8.8 >/dev/null 2>&1; then
+if check_internet; then
     echo "Already online. Exiting." | tee -a "$LOG_FILE"
     exit 0
 fi
@@ -39,11 +46,11 @@ echo "Response from submission: $RESPONSE" | tee -a "$LOG_FILE"
 # 4. Connectivity check
 echo "Checking internet connectivity..." | tee -a "$LOG_FILE"
 sleep 5
-ping -c 3 8.8.8.8 >/dev/null && { echo "Success: Internet access restored."; rm -f "$COOKIE_FILE"; exit 0; } || {
+check_internet&& { echo "Success: Internet access restored."; rm -f "$COOKIE_FILE"; exit 0; } || {
     echo "Trying fallback login to wbs API..." | tee -a "$LOG_FILE"
     curl -m 15 -k -k -v -k -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration" >> "$LOG_FILE" 2>&1
     sleep 5
-    ping -c 3 8.8.8.8 >/dev/null && { echo "Success on fallback!"; rm -f "$COOKIE_FILE"; exit 0; }
+    check_internet&& { echo "Success on fallback!"; rm -f "$COOKIE_FILE"; exit 0; }
 }
 
 echo "Error: Connectivity test failed." | tee -a "$LOG_FILE"

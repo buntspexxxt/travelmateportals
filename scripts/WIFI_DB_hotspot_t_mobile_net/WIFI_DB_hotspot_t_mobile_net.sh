@@ -1,5 +1,10 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.0.0"
+
+check_internet() {
+    curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | grep -qE '204|200'
+}
+
+# SCRIPT_VERSION="1.0.1"
 LOG_FILE="/tmp/hotspot_login.log"
 COOKIE_JAR="/tmp/telekom_cookies.txt"
 echo "$(date): Starting login script for Telekom Hotspot..." | tee -a "$LOG_FILE"
@@ -16,7 +21,7 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
 done
 
 # Check if already online
-if ping -c 3 8.8.8.8 >/dev/null 2>&1; then
+if check_internet; then
     echo "Already online. Exiting." | tee -a "$LOG_FILE"
     exit 0
 fi
@@ -60,7 +65,7 @@ rm -f "$COOKIE_JAR"
 # 4. Verification check
 echo "Verifying connection..." | tee -a "$LOG_FILE"
 sleep 3
-if ping -c 3 8.8.8.8 >/dev/null 2>&1; then
+if check_internet; then
     echo "Login successful! Internet is active." | tee -a "$LOG_FILE"
     exit 0
 else

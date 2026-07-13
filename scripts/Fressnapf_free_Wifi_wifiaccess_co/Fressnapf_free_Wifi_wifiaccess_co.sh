@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# SCRIPT_VERSION="1.1.0"
+
+check_internet() {
+    curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | grep -qE '204|200'
+}
+
+
 LOG_FILE="/tmp/wifi_login.log"
 echo "Starting Portal Login Script..." | tee -a "$LOG_FILE"
 
@@ -37,7 +44,7 @@ echo "Auth Result: $AUTH_RESPONSE" | tee -a "$LOG_FILE"
 
 # Final Connectivity Check
 echo "Performing connectivity check..." | tee -a "$LOG_FILE"
-if ping -c 3 8.8.8.8 >/dev/null; then
+if check_internet; then
     echo "Successfully connected to internet." | tee -a "$LOG_FILE"
     exit 0
 else

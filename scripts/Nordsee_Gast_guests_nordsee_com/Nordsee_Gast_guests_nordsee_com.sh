@@ -1,4 +1,11 @@
 #!/bin/bash
+
+# SCRIPT_VERSION="1.1.0"
+
+check_internet() {
+    curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | grep -qE '204|200'
+}
+
 LOG_FILE=/tmp/portal_login.log
 echo "Starting Nordsee Portal Login..." | tee -a $LOG_FILE
 
@@ -36,4 +43,4 @@ echo "HTTP Response Received: $RESPONSE" | tee -a $LOG_FILE
 
 # 5. Connectivity Check
 echo "Checking connectivity..." | tee -a $LOG_FILE
-ping -c 3 8.8.8.8 >/dev/null && echo "Success: Internet access confirmed." && exit 0 || echo "Error: No internet access." && exit 1
+check_internet&& echo "Success: Internet access confirmed." && exit 0 || echo "Error: No internet access." && exit 1

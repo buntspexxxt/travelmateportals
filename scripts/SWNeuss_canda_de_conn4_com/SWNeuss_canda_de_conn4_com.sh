@@ -1,5 +1,10 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.0.0"
+
+check_internet() {
+    curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | grep -qE '204|200'
+}
+
+# SCRIPT_VERSION="1.0.1"
 LOG_FILE="/tmp/wifi_login.log"
 echo "Starting login process..." | tee -a "$LOG_FILE"
 
@@ -34,4 +39,4 @@ echo "Submitting authorization POST to: $GRANT_URL" | tee -a "$LOG_FILE"
 curl -m 15 -s -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$GRANT_URL" > /dev/null
 
 echo "Checking connectivity..." | tee -a "$LOG_FILE"
-ping -c 3 8.8.8.8 >/dev/null && echo "SUCCESS: Connected to Internet." | tee -a "$LOG_FILE" && exit 0 || { echo "FAILURE: Connectivity check failed."; exit 1; }
+check_internet&& echo "SUCCESS: Connected to Internet." | tee -a "$LOG_FILE" && exit 0 || { echo "FAILURE: Connectivity check failed."; exit 1; }

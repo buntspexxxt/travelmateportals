@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# SCRIPT_VERSION="1.1.0"
+
+check_internet() {
+    curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | grep -qE '204|200'
+}
+
+
 LOG_FILE="/tmp/portal_login.log"
 echo "Starting WiFi4EU multi-stage login process..." | tee -a "$LOG_FILE"
 
@@ -45,7 +52,7 @@ echo "Finalizing connection..." | tee -a "$LOG_FILE"
 FINAL_RESULT=$(curl -m 15 -v -A "$USER_AGENT" -b "$COOKIE_JAR" -L "https://service.thecloud.eu/service-platform/home" 2>&1)
 
 # 7. Connectivity check
-ping -c 3 8.8.8.8 >/dev/null && {
+check_internet&& {
     echo "Login successful!" | tee -a "$LOG_FILE"
     exit 0
 } || {
