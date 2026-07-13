@@ -1,8 +1,7 @@
 #!/bin/bash
-
-# Auto-injected cleanup trap for temporary session files
-trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 # SCRIPT_VERSION="1.0.0"
+
+trap 'rm -f "${COOKIE_FILE}" "${HTML_FILE}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 COOKIE_FILE=$(mktemp)
@@ -20,23 +19,27 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching splash page and extracting form parameters..." | tee -a "$LOG_FILE"
+echo "Fetching Peplink session state..." | tee -a "$LOG_FILE"
+# Initial request to capture session and redirect parameters
 EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -w "%{url_effective}" -o "$HTML_FILE" "http://neverssl.com")
 
-echo "Extracting hidden fields..." | tee -a "$LOG_FILE"
+echo "Parsing session parameters from HTML..." | tee -a "$LOG_FILE"
 HTML=$(cat "$HTML_FILE")
-CHALLENGE=$(echo "$HTML" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p')
-UAMIP=$(echo "$HTML" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p')
-UAMPORT=$(echo "$HTML" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p')
-USERURL=$(echo "$HTML" | sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p')
-NASID=$(echo "$HTML" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p')
+SN=$(echo "$HTML" | sed -n 's/.*sn: "\([^"]*\)".*/\1/p' | head -n 1)
+SSID=$(echo "$HTML" | sed -n 's/.*ssid: "\([^"]*\)".*/\1/p' | head -n 1)
+CHECKSUM=$(echo "$HTML" | sed -n 's/.*checksum: "\([^"]*\)".*/\1/p' | head -n 1)
+CP_ID=$(echo "$HTML" | sed -n 's/.*cp_id: "\([^"]*\)".*/\1/p' | head -n 1)
 
-# Prepare POST data for Hotsplots login
-# Values: haveTerms=1, termsOK=on, myLogin=agb
-POST_DATA="haveTerms=1&termsOK=on&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&userurl=$USERURL&myLogin=agb&ll=de&nasid=$NASID&custom=1&button=kostenlos+einloggen"
+# Perform session resume check
+RESUME_URL="https://guest7.ic.peplink.com/cp/session/resume?client_mac=4E:6D:BA:0C:8F:84&sn=$SN&ssid=$SSID&time=$(date +%s)&cp_id=$CP_ID&checksum=$CHECKSUM"
+echo "Requesting resume login..." | tee -a "$LOG_FILE"
+RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 "$RESUME_URL")
+echo "HTTP Response: $RESPONSE" | tee -a "$LOG_FILE"
 
-echo "Submitting terms and conditions..." | tee -a "$LOG_FILE"
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -d "$POST_DATA" "https://www.hotsplots.de/auth/login.php"
+# Submit the final login command
+LOGIN_URL="https://guest7.ic.peplink.com/cp/login?command=login&sn=$SN&ssid=$SSID&cp_id=$CP_ID&checksum=$CHECKSUM"
+echo "Executing final login..." | tee -a "$LOG_FILE"
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 "$LOGIN_URL"
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 15 "http://connectivitycheck.gstatic.com/generate_204")
