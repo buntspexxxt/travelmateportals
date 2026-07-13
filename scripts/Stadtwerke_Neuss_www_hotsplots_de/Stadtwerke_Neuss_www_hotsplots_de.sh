@@ -1,41 +1,49 @@
 #!/bin/bash
-# SCRIPT_VERSION="1.1.1"
 
-trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}" "${HTML_FILE2:-}"' EXIT
+# Auto-injected cleanup trap for temporary session files
+trap 'rm -f "${COOKIE_JAR:-}" "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
+# SCRIPT_VERSION="1.0.0"
 LOG_FILE="/tmp/portal_login.log"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 COOKIE_FILE=$(mktemp)
 HTML_FILE=$(mktemp)
-HTML_FILE2=$(mktemp)
 
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+i=1
+while [ $i -le 20 ]; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
         echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
         sleep 2
         break
     fi
-    sleep 2
+    sleep 1
+    i=$((i + 1))
 done
 
-echo "Fetching initial splash page..." | tee -a "$LOG_FILE"
-# The portal requires a cookie-enabled session. Using curl to visit the landing page to get the session cookie.
-curl -m 15 -k -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_FILE" "http://neverssl.com"
+echo "Fetching splash page and extracting form parameters..." | tee -a "$LOG_FILE"
+EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -w "%{url_effective}" -o "$HTML_FILE" "http://neverssl.com")
 
-echo "Submitting registration form (The Cloud 'Continue' button)..." | tee -a "$LOG_FILE"
-# The form at https://service.thecloud.eu/service-platform/macauthlogin/v5/registration requires a POST request.
-# Based on the HTML, there are no hidden input fields needed besides standard session cookies.
-# We post an empty body to simulate clicking 'Continue' (or a simple form submission) as observed in 'The Cloud' portals.
-RESPONSE_CODE=$(curl -m 15 -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -w "%{http_code}" -o "$HTML_FILE2" -d "" "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration")
+echo "Extracting hidden fields..." | tee -a "$LOG_FILE"
+HTML=$(cat "$HTML_FILE")
+CHALLENGE=$(echo "$HTML" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p')
+UAMIP=$(echo "$HTML" | sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p')
+UAMPORT=$(echo "$HTML" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p')
+USERURL=$(echo "$HTML" | sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p')
+NASID=$(echo "$HTML" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p')
 
-echo "HTTP Response Code from registration: $RESPONSE_CODE" | tee -a "$LOG_FILE"
+# Prepare POST data for Hotsplots login
+# Values: haveTerms=1, termsOK=on, myLogin=agb
+POST_DATA="haveTerms=1&termsOK=on&challenge=$CHALLENGE&uamip=$UAMIP&uamport=$UAMPORT&userurl=$USERURL&myLogin=agb&ll=de&nasid=$NASID&custom=1&button=kostenlos+einloggen"
 
-echo "Verifying real Internet connectivity..."
-CHECK_CODE=$(curl -m 15 -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+echo "Submitting terms and conditions..." | tee -a "$LOG_FILE"
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -d "$POST_DATA" "https://www.hotsplots.de/auth/login.php"
+
+echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
+CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 15 "http://connectivitycheck.gstatic.com/generate_204")
 if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
-    echo "SUCCESS: Internet connection verified!"
+    echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
     exit 0
 else
-    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)"
+    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)" | tee -a "$LOG_FILE"
     exit 1
 fi
