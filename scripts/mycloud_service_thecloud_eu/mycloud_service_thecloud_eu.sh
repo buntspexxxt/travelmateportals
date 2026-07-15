@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SCRIPT_VERSION="1.1.0"
+# SCRIPT_VERSION="1.1.1"
 
 check_internet() {
     curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | grep -qE '204|200'
@@ -38,7 +38,6 @@ echo "Landing URL obtained: $LANDING_URL" | tee -a "$LOG_FILE"
 # 3. POST to the registration endpoint using the session cookies
 echo "Submitting form to registration endpoint..." | tee -a "$LOG_FILE"
 RESPONSE=$(curl -m 15 -k -k -v -k -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L "https://service.thecloud.eu/service-platform/macauthlogin/v5/registration" \
-    -X POST \
     -d "submit=Continue" 2>&1)
 
 echo "Response from submission: $RESPONSE" | tee -a "$LOG_FILE"

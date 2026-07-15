@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SCRIPT_VERSION="1.1.0"
+# SCRIPT_VERSION="1.1.1"
 
 check_internet() {
     curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | grep -qE '204|200'
@@ -30,7 +30,7 @@ curl -m 15 -v -A "$USER_AGENT" -c "$COOKIE_JAR" -L "https://service.thecloud.eu/
 
 # 3. Extract the 'Get Online' URL dynamically
 PAGE_HTML=$(curl -m 15 -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -L "https://service.thecloud.eu/service-platform/home")
-GET_ONLINE_URL=$(echo "$PAGE_HTML" | sed -n 's/.*href="\([^"]*\/service-platform\/url\/[0-9]\+\)".*/\1/p' | head -1)
+GET_ONLINE_URL=$(echo "$PAGE_HTML" | grep -oE "href=['\"][^'\"]*/service-platform/url/[0-9]+" | sed -E "s/href=['\"]//" | head -n 1)
 
 if [ -z "$GET_ONLINE_URL" ]; then
     echo "Error: Could not find 'Get Online' link. Exiting." | tee -a "$LOG_FILE"
