@@ -8,7 +8,6 @@ trap 'rm -f "$COOKIE_FILE" "$HTML_FILE"' EXIT
 
 echo "Starting Telekom Hotspot multi-step login..." | tee -a "$LOG_FILE"
 
-# Wait for network
 i=1
 while [ $i -le 20 ]; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
@@ -20,29 +19,22 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-# 1. Capture initial session and XML
-echo "Probing for login URL..." | tee -a "$LOG_FILE"
-curl -m 15 -k -c "$COOKIE_FILE" -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -o "$HTML_FILE" "http://neverssl.com"
+echo "Capturing redirect details..." | tee -a "$LOG_FILE"
+EFFECTIVE_URL=$(curl -k -L -w "%{url_effective}" -o "$HTML_FILE" -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "http://neverssl.com")
 
-# 2. Extract Login URL
 LOGIN_URL=$(cat "$HTML_FILE" | tr -d '\015' | sed -n 's/.*<loginurl>\([^<]*\)<\/loginurl>.*/\1/p' | sed 's/&amp;/\&/g')
 
 if [ -z "$LOGIN_URL" ]; then
-    echo "ERROR: Could not extract login URL." | tee -a "$LOG_FILE"
+    echo "ERROR: Could not extract login URL from portal HTML." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-# 3. Step 1: Free Login Request
 echo "Submitting initial free login..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -m 15 -k -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "UserName=&Password=&FNAME=0&button=Login&OriginatingServer=http%3A%2F%2Fneverssl.com" "$LOGIN_URL")
-echo "Response: $RESPONSE" | tee -a "$LOG_FILE"
+curl -v -k -m 15 -b "$COOKIE_FILE" -c "$COOKIE_FILE" -A "Mozilla/5.0" --data-urlencode "UserName=" --data-urlencode "Password=" --data-urlencode "FNAME=0" --data-urlencode "button=Login" --data-urlencode "OriginatingServer=http://neverssl.com" "$LOGIN_URL"
 
-# 4. Step 2: Handle modern ECOM3 Portal (JS context initialization)
-# The HTML indicates an Angular app that requires session storage/cookies initialization.
-echo "Initializing ECOM3 session context..." | tee -a "$LOG_FILE"
-curl -m 15 -k -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X GET "https://hotspot.t-mobile.net/wlan/rest/login/session"
+echo "Initializing ECOM3 session..." | tee -a "$LOG_FILE"
+curl -v -k -m 15 -b "$COOKIE_FILE" -c "$COOKIE_FILE" -A "Mozilla/5.0" "https://hotspot.t-mobile.net/wlan/rest/login/session"
 
-# 5. Connectivity Check
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..."
 i=1
 while [ $i -le 10 ]; do
@@ -55,4 +47,6 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$((i + 1))
 done
+
+echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
