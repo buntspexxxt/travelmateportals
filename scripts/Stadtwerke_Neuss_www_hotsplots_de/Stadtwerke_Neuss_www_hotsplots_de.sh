@@ -18,7 +18,7 @@ while [ $i -le 20 ]; do
 done
 
 echo "Fetching landing page..." | tee -a "$LOG_FILE"
-curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -o "$HTML_FILE" "http://neverssl.com"
+EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -w "%{url_effective}" -o "$HTML_FILE" "http://neverssl.com")
 
 HTML=$(cat "$HTML_FILE")
 CHALLENGE=$(echo "$HTML" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p')
@@ -28,7 +28,8 @@ USERURL=$(echo "$HTML" | sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p')
 NASID=$(echo "$HTML" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p')
 
 echo "Submitting form with terms acceptance..." | tee -a "$LOG_FILE"
-# Using termsOK=on to trigger the checkbox validation logic observed in the HTML
+# Based on analysis, the form requires haveTerms=1 and termsOK=on to pass the JS validation.
+# We follow up with the POST request to the action URL identified in the HTML.
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
     --data-urlencode "haveTerms=1" \
     --data-urlencode "termsOK=on" \
@@ -43,7 +44,7 @@ curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
     --data-urlencode "button=kostenlos einloggen" \
     "https://www.hotsplots.de/auth/login.php"
 
-echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
+echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
     CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
