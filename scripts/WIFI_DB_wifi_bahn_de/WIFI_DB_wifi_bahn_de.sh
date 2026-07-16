@@ -21,24 +21,22 @@ while [ $i -le 20 ]; do
 done
 
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-
-echo "Checking for redirect domain..." | tee -a "$LOG_FILE"
-# Trying both common domains for ICE portals
 TARGET_DOMAIN="wifi.bahn.de"
-CHECK_URL="http://${TARGET_DOMAIN}/en/"
-HTTP_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -A "$UA" -m 15 "$CHECK_URL")
+CHECK_URL="https://${TARGET_DOMAIN}/en/"
 
-if [ "$HTTP_CODE" != "200" ]; then
-    echo "Switching to secondary domain: login.wifionice.de" | tee -a "$LOG_FILE"
-    TARGET_DOMAIN="login.wifionice.de"
-    CHECK_URL="https://${TARGET_DOMAIN}/en/"
-fi
-
-echo "Fetching CSRF token from ${TARGET_DOMAIN}..." | tee -a "$LOG_FILE"
+echo "Fetching initial session and CSRF token from ${TARGET_DOMAIN}..." | tee -a "$LOG_FILE"
 curl -k -v -A "$UA" -c "$COOKIE_FILE" -o /dev/null -m 15 "$CHECK_URL" 2>>"$LOG_FILE"
 
-# Extracting CSRF token from cookie file
+# Extract CSRF token from cookies
 CSRF_TOKEN=$(grep 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}')
+
+if [ -z "$CSRF_TOKEN" ]; then
+    echo "Primary domain failed. Trying login.wifionice.de..." | tee -a "$LOG_FILE"
+    TARGET_DOMAIN="login.wifionice.de"
+    CHECK_URL="https://${TARGET_DOMAIN}/en/"
+    curl -k -v -A "$UA" -c "$COOKIE_FILE" -o /dev/null -m 15 "$CHECK_URL" 2>>"$LOG_FILE"
+    CSRF_TOKEN=$(grep 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}')
+fi
 
 if [ -z "$CSRF_TOKEN" ]; then
     echo "Failed to extract CSRF token!" | tee -a "$LOG_FILE"
@@ -46,8 +44,9 @@ if [ -z "$CSRF_TOKEN" ]; then
 fi
 
 echo "Submitting login POST request..." | tee -a "$LOG_FILE"
-# Using the logic provided in the hint
-curl -k -v -A "$UA" -b "$COOKIE_FILE" -H "Cookie: csrf=$CSRF_TOKEN" --data-urlencode "login=true" --data-urlencode "CSRFToken=$CSRF_TOKEN" -o /dev/null -m 15 "https://${TARGET_DOMAIN}/en/" 2>>"$LOG_FILE"
+RESPONSE_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -A "$UA" -b "$COOKIE_FILE" -H "Cookie: csrf=$CSRF_TOKEN" --data-urlencode "login=true" --data-urlencode "CSRFToken=$CSRF_TOKEN" -m 15 "https://${TARGET_DOMAIN}/en/")
+
+echo "HTTP Response from login request: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
