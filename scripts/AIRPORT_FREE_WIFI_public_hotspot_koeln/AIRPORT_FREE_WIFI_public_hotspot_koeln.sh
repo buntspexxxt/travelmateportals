@@ -1,47 +1,50 @@
-#!/bin/bash
-# SCRIPT_VERSION="1.3.1"
+#!/bin/sh
+# SCRIPT_VERSION="1.4.0"
 
 trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 LOG_FILE="/tmp/portal_login.log"
-echo "Starting updated portal login sequence..." | tee -a "$LOG_FILE"
-
-echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-    if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
-        echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
-        sleep 2
-        break
-    fi
-    sleep 1
-done
-
 COOKIE_FILE=$(mktemp)
 HTML_FILE=$(mktemp)
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-echo "Step 1: Fetching landing page..." | tee -a "$LOG_FILE"
-REDIRECT_URL="https://public.hotspot.koeln/cp/guqs6n9d"
-EFFECTIVE_URL=$(curl -m 15 -k -L --connect-timeout 10 --max-time 25 -w "%{url_effective}" -o "$HTML_FILE" -c "$COOKIE_FILE" -b "$COOKIE_FILE" -A "$USER_AGENT" "$REDIRECT_URL")
+echo "Starting portal login sequence..." | tee -a "$LOG_FILE"
 
-# Extracting hidden fields and login URL
-FORM_ACTION=$(sed -n 's/.*action="\([^"]*\)".*/\1/p' "$HTML_FILE" | head -n1 | tr -d '\015')
-[ -z "$FORM_ACTION" ] && FORM_ACTION="https://public.hotspot.koeln/login"
+echo "Waiting for network..." | tee -a "$LOG_FILE"
+i=1
+while [ $i -le 20 ]; do
+    if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
+        echo "Network ready." | tee -a "$LOG_FILE"
+        break
+    fi
+    sleep 2
+    i=$((i + 1))
+done
 
-echo "Step 2: Submitting login with mandatory checkbox..." | tee -a "$LOG_FILE"
-# Based on HTML, we must include the checkbox 'required' or the form fails. 
-# The portal logic checks for presence of fields. Adding checkbox validation parameter if necessary.
-# Sending form data. Note: The checkbox is 'id="customControlValidation1"'. In POST, it usually expects the field to be present.
-curl -m 15 -k -L --connect-timeout 15 --max-time 30 -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
-  -d "login=oneclick" \
-  -d "customControlValidation1=on" \
-  "$FORM_ACTION"
+echo "Step 1: Fetching portal landing page..." | tee -a "$LOG_FILE"
+curl -m 15 -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" "https://public.hotspot.koeln/cp/guqs6n9d" >/dev/null 2>&1
 
-echo "Verifying real Internet connectivity..."
-CHECK_CODE=$(curl -m 15 -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
-if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
-    echo "SUCCESS: Internet connection verified!"
-    exit 0
-else
-    echo "ERROR: Portal request completed but no Internet connectivity established (HTTP Check Code: $CHECK_CODE)"
-    exit 1
-fi
+echo "Step 2: Submitting form..." | tee -a "$LOG_FILE"
+# Based on analysis, the form requires the checkbox field 'customControlValidation1' to be 'on'.
+# The form action is fixed as /login.
+RESPONSE=$(curl -m 15 -k -L -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
+  --data-urlencode "login=oneclick" \
+  --data-urlencode "customControlValidation1=on" \
+  "https://public.hotspot.koeln/login" 2>&1)
+
+echo "HTTP Response captured. Verifying..." | tee -a "$LOG_FILE"
+
+echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
+i=1
+while [ $i -le 10 ]; do
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
+        echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
+        exit 0
+    fi
+    echo "Attempt $i: Not connected yet (HTTP Check Code: $CHECK_CODE). Waiting..." | tee -a "$LOG_FILE"
+    sleep 4
+    i=$((i + 1))
+done
+
+echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
+exit 1
