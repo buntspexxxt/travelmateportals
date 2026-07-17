@@ -7,15 +7,14 @@ HTML_FILE=$(mktemp)
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 decode_html_entities() {
-    local val="$1"
-    echo "$val" | sed 's/&quot;/"/g; s/&amp;/\&/g; s/&#x27;/\'/g; s/&#39;/\'/g; s/&lt;/</g; s/&gt;/>/g; s/&#x3D;/=/g; s/&#61;/=/g;'
+    echo "$1" | sed 's/&quot;/"/g; s/&amp;/\&/g; s/&#x27;/\'/g; s/&#39;/\'/g; s/&lt;/</g; s/&gt;/>/g; s/&#x3D;/=/g;'
 }
 
-echo "Waiting for network..." | tee -a "$LOG_FILE"
+echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 20 ]; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
-        echo "Network ready!" | tee -a "$LOG_FILE"
+        echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
         sleep 2
         break
     fi
@@ -24,12 +23,11 @@ while [ $i -le 20 ]; do
 done
 
 echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
-curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -L -o "$HTML_FILE" "http://neverssl.com"
-HTML=$(cat "$HTML_FILE")
+EFFECTIVE_URL=$(curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -L -w "%{url_effective}" -o "$HTML_FILE" "http://neverssl.com" | tr -d '\015')
 
+HTML=$(cat "$HTML_FILE")
 get_input_value() {
-    local name="$1"
-    echo "$HTML" | sed -n "s/.*name="$name"[^>]*value="\([^"]*\)".*/\1/p; s/.*value="\([^"]*\)"[^>]*name="$name".*/\1/p" | head -n 1
+    echo "$HTML" | sed -n "s/.*name="$1"[^>]*value="\([^"]*\)".*/\1/p" | head -n 1
 }
 
 CHALLENGE=$(get_input_value "challenge")
@@ -41,31 +39,30 @@ LL=$(get_input_value "ll")
 NASID=$(get_input_value "nasid")
 CUSTOM=$(get_input_value "custom")
 
-POST_URL="https://www.hotsplots.de/auth/login.php"
-echo "Submitting acceptance..." | tee -a "$LOG_FILE"
-
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -L \
+echo "Submitting terms acceptance..." | tee -a "$LOG_FILE"
+RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -L \
     --data-urlencode "haveTerms=1" \
     --data-urlencode "termsOK=on" \
     --data-urlencode "challenge=$CHALLENGE" \
     --data-urlencode "uamip=$UAMIP" \
     --data-urlencode "uamport=$UAMPORT" \
     --data-urlencode "userurl=$USERURL" \
-    --data-urlencode "myLogin=$MYLOGIN" \
-    --data-urlencode "ll=$LL" \
+    --data-urlencode "myLogin=${MYLOGIN:-agb}" \
+    --data-urlencode "ll=${LL:-de}" \
     --data-urlencode "nasid=$NASID" \
-    --data-urlencode "custom=$CUSTOM" \
+    --data-urlencode "custom=${CUSTOM:-1}" \
     --data-urlencode "button=kostenlos einloggen" \
-    "$POST_URL" | tee -a "$LOG_FILE"
+    "https://www.hotsplots.de/auth/login.php")
 
-echo "Verifying connectivity..." | tee -a "$LOG_FILE"
+echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
     CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
-        echo "SUCCESS: Connected!" | tee -a "$LOG_FILE"
+        echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
     fi
+    echo "Attempt $i: Not connected yet (HTTP Check Code: $CHECK_CODE). Waiting..." | tee -a "$LOG_FILE"
     sleep 4
     i=$((i + 1))
 done
