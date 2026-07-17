@@ -4,9 +4,9 @@
 COOKIE_FILE=$(mktemp)
 trap 'rm -f "$COOKIE_FILE"' EXIT
 LOG_FILE="/tmp/portal_login.log"
+
 echo "Starting portal login sequence for WIFI_DB_wifi_bahn_de" | tee -a "$LOG_FILE"
 
-echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 20 ]; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
@@ -22,15 +22,15 @@ UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge
 TARGET_DOMAIN="wifi.bahn.de"
 
 echo "Fetching session from ${TARGET_DOMAIN}..." | tee -a "$LOG_FILE"
-curl -k -v -A "$UA" -c "$COOKIE_FILE" -o /dev/null -m 15 "https://${TARGET_DOMAIN}/en/" 2>>"$LOG_FILE"
+# Added --ciphers 'DEFAULT:@SECLEVEL=1' to bypass 'unsafe legacy renegotiation disabled' error
+curl -k -v -A "$UA" -c "$COOKIE_FILE" --ciphers 'DEFAULT:@SECLEVEL=1' -o /dev/null -m 15 "https://${TARGET_DOMAIN}/en/" 2>>"$LOG_FILE"
 
 CSRF_TOKEN=$(grep 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}')
 
-# Fallback to login.wifionice.de if needed
 if [ -z "$CSRF_TOKEN" ]; then
     echo "Primary domain failed. Trying login.wifionice.de..." | tee -a "$LOG_FILE"
     TARGET_DOMAIN="login.wifionice.de"
-    curl -k -v -A "$UA" -c "$COOKIE_FILE" -o /dev/null -m 15 "https://${TARGET_DOMAIN}/en/" 2>>"$LOG_FILE"
+    curl -k -v -A "$UA" -c "$COOKIE_FILE" --ciphers 'DEFAULT:@SECLEVEL=1' -o /dev/null -m 15 "https://${TARGET_DOMAIN}/en/" 2>>"$LOG_FILE"
     CSRF_TOKEN=$(grep 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}')
 fi
 
@@ -40,8 +40,7 @@ if [ -z "$CSRF_TOKEN" ]; then
 fi
 
 echo "Submitting login POST request..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -k -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -H "Cookie: csrf=$CSRF_TOKEN" --data-urlencode "login=true" --data-urlencode "CSRFToken=$CSRF_TOKEN" -m 15 "https://${TARGET_DOMAIN}/en/")
-echo "HTTP Response captured." | tee -a "$LOG_FILE"
+curl -k -v -A "$UA" -b "$COOKIE_FILE" --ciphers 'DEFAULT:@SECLEVEL=1' -H "Cookie: csrf=${CSRF_TOKEN}" --data-urlencode "login=true" --data-urlencode "CSRFToken=${CSRF_TOKEN}" -m 15 "https://${TARGET_DOMAIN}/en/" >>"$LOG_FILE" 2>&1
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
