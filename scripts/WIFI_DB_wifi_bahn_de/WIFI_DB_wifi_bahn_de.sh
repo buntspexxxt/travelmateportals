@@ -22,7 +22,7 @@ UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Ge
 TARGET_DOMAIN="wifi.bahn.de"
 
 echo "Fetching session from ${TARGET_DOMAIN}..." | tee -a "$LOG_FILE"
-# Added --ciphers 'DEFAULT:@SECLEVEL=1' to bypass 'unsafe legacy renegotiation disabled' error
+# Using --ciphers to bypass legacy renegotiation and -k for self-signed certs
 curl -k -v -A "$UA" -c "$COOKIE_FILE" --ciphers 'DEFAULT:@SECLEVEL=1' -o /dev/null -m 15 "https://${TARGET_DOMAIN}/en/" 2>>"$LOG_FILE"
 
 CSRF_TOKEN=$(grep 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}')
@@ -55,5 +55,5 @@ while [ $i -le 10 ]; do
     i=$((i + 1))
 done
 
-echo "ERROR: Portal request completed but no Internet connectivity established." | tee -a "$LOG_FILE"
+echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
