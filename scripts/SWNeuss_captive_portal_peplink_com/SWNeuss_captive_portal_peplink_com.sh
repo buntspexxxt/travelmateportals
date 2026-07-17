@@ -21,12 +21,14 @@ echo "Fetching landing parameters..." | tee -a "$LOG_FILE"
 EFFECTIVE_URL=$(curl -k -L -m 15 -A "$USER_AGENT" -w "%{url_effective}" -o /dev/null "http://neverssl.com" | tr -d '\015')
 QUERY_STRING=$(echo "$EFFECTIVE_URL" | sed -n 's/.*?\(.*\)/\1/p')
 
-echo "Attempting session resume..." | tee -a "$LOG_FILE"
-RESUME_RESPONSE=$(curl -k -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -G "https://guest7.ic.peplink.com/cp/session/resume" --data-urlencode "client_mac=$(echo "$QUERY_STRING" | sed -n 's/.*client_mac=\([^&]*\).*/\1/p')" --data-urlencode "sn=$(echo "$QUERY_STRING" | sed -n 's/.*sn=\([^&]*\).*/\1/p')" --data-urlencode "ssid=$(echo "$QUERY_STRING" | sed -n 's/.*ssid=\([^&]*\).*/\1/p')" --data-urlencode "time=$(echo "$QUERY_STRING" | sed -n 's/.*time=\([^&]*\).*/\1/p')" --data-urlencode "cp_id=$(echo "$QUERY_STRING" | sed -n 's/.*cp_id=\([^&]*\).*/\1/p')" --data-urlencode "checksum=$(echo "$QUERY_STRING" | sed -n 's/.*checksum=\([^&]*\).*/\1/p')" --data-urlencode "_=$(date +%s)")
+echo "Attempting initial session resume..." | tee -a "$LOG_FILE"
+RESUME_JSON=$(curl -k -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -G "https://guest7.ic.peplink.com/cp/session/resume" --data-urlencode "client_mac=$(echo "$QUERY_STRING" | sed -n 's/.*client_mac=\([^&]*\).*/\1/p')" --data-urlencode "sn=$(echo "$QUERY_STRING" | sed -n 's/.*sn=\([^&]*\).*/\1/p')" --data-urlencode "ssid=$(echo "$QUERY_STRING" | sed -n 's/.*ssid=\([^&]*\).*/\1/p')" --data-urlencode "time=$(echo "$QUERY_STRING" | sed -n 's/.*time=\([^&]*\).*/\1/p')" --data-urlencode "cp_id=$(echo "$QUERY_STRING" | sed -n 's/.*cp_id=\([^&]*\).*/\1/p')" --data-urlencode "checksum=$(echo "$QUERY_STRING" | sed -n 's/.*checksum=\([^&]*\).*/\1/p')" --data-urlencode "_=$(date +%s)")
+echo "Resume response: $RESUME_JSON" | tee -a "$LOG_FILE"
 
-echo "Session check complete. Submitting login request..." | tee -a "$LOG_FILE"
+echo "Submitting explicit connect/login request..." | tee -a "$LOG_FILE"
+# Based on analysis, the portal requires navigating to the login endpoint with the same query parameters
 LOGIN_URL="https://guest7.ic.peplink.com/cp/login?$QUERY_STRING&command=login&resume=true&lang=en&_=$(date +%s)"
-curl -k -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$LOGIN_URL"
+curl -k -v -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$LOGIN_URL" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
