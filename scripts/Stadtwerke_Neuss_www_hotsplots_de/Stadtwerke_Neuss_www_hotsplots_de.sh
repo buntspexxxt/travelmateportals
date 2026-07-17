@@ -18,7 +18,7 @@ while [ $i -le 20 ]; do
 done
 
 echo "Fetching landing page..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -w "%{url_effective}" -o "$HTML_FILE" "http://neverssl.com")
+curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -o "$HTML_FILE" "http://neverssl.com" >/dev/null 2>&1
 
 HTML=$(cat "$HTML_FILE")
 CHALLENGE=$(echo "$HTML" | sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p')
@@ -27,10 +27,8 @@ UAMPORT=$(echo "$HTML" | sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p')
 USERURL=$(echo "$HTML" | sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p')
 NASID=$(echo "$HTML" | sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p')
 
-echo "Submitting form with terms acceptance..." | tee -a "$LOG_FILE"
-# Based on analysis, the form requires haveTerms=1 and termsOK=on to pass the JS validation.
-# We follow up with the POST request to the action URL identified in the HTML.
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
+echo "Submitting form to Hotsplots..." | tee -a "$LOG_FILE"
+REDIRECT_HTML=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
     --data-urlencode "haveTerms=1" \
     --data-urlencode "termsOK=on" \
     --data-urlencode "challenge=$CHALLENGE" \
@@ -42,7 +40,17 @@ curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
     --data-urlencode "nasid=$NASID" \
     --data-urlencode "custom=1" \
     --data-urlencode "button=kostenlos einloggen" \
-    "https://www.hotsplots.de/auth/login.php"
+    "https://www.hotsplots.de/auth/login.php")
+
+echo "Extracting CoovaChilli redirect URL from response..." | tee -a "$LOG_FILE"
+REDIRECT_URL=$(echo "$REDIRECT_HTML" | sed -n 's/.*url=\([^"]*\)".*/\1/p' | tr -d '\015')
+
+if [ -n "$REDIRECT_URL" ]; then
+    echo "Following CoovaChilli redirect: $REDIRECT_URL" | tee -a "$LOG_FILE"
+    curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -m 15 "$REDIRECT_URL" >/dev/null 2>&1
+else
+    echo "No direct redirect found. Proceeding to connectivity check." | tee -a "$LOG_FILE"
+fi
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
