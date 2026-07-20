@@ -34,23 +34,19 @@ UAMPORT=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form_uamport" valu
 TOKEN=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form__token" value="\([^"]*\)".*/\1/p')
 
 if [ -z "$CHALLENGE" ]; then
-    echo "Error: Could not extract form parameters." | tee -a "$LOG_FILE"
-    exit 1
+    echo "Error: Could not extract form parameters. Portal might be already authenticated." | tee -a "$LOG_FILE"
+else
+    echo "Submitting acceptance form..." | tee -a "$LOG_FILE"
+    # Submit form - the portal expects the POST to the same URL retrieved from the redirect
+    RESPONSE_CODE=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
+        --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
+        --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
+        --data-urlencode "login_status_form[uamip]=$UAMIP" \
+        --data-urlencode "login_status_form[uamport]=$UAMPORT" \
+        --data-urlencode "login_status_form[_token]=$TOKEN" \
+        -w "%{http_code}" -o /dev/null "$EFFECTIVE_URL")
+    echo "HTTP Response from login: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 fi
-
-echo "Submitting acceptance form..." | tee -a "$LOG_FILE"
-# Submit form with data-urlencode to ensure integrity
-RESPONSE_CODE=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
-    --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
-    --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
-    --data-urlencode "login_status_form[uamip]=$UAMIP" \
-    --data-urlencode "login_status_form[uamport]=$UAMPORT" \
-    --data-urlencode "login_status_form[ll]=" \
-    --data-urlencode "login_status_form[myLogin]=" \
-    --data-urlencode "login_status_form[_token]=$TOKEN" \
-    -w "%{http_code}" -o /dev/null "$EFFECTIVE_URL")
-
-echo "HTTP Response from login: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
