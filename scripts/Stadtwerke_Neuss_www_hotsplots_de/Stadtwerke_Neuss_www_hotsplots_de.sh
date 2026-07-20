@@ -1,5 +1,5 @@
 #!/bin/sh
-# SCRIPT_VERSION="1.0.1"
+# SCRIPT_VERSION="1.0.0"
 LOG_FILE="/tmp/portal_login.log"
 trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 COOKIE_FILE=$(mktemp)
@@ -20,11 +20,9 @@ done
 
 echo "Fetching initial portal page..." >> "$LOG_FILE"
 curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -L -o "$HTML_FILE" "http://neverssl.com"
-HTML=$(cat "$HTML_FILE")
 
 get_input_value() {
-    # Extract value using sed to avoid grep -P issues. Input $1 is the name attribute.
-    sed -n "s/.*name="$1" value="\([^"]*\)".*/\1/p" "$HTML_FILE" | head -n 1
+    sed -n "s/.*name="$1" value="\([^"]*\)".*/\1/p" "$HTML_FILE" | head -n 1 | tr -d '\015'
 }
 
 CHALLENGE=$(get_input_value "challenge")
@@ -56,8 +54,6 @@ RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15
     --data-urlencode "button=kostenlos einloggen" \
     "https://www.hotsplots.de/auth/login.php")
 
-echo "HTTP Response captured." >> "$LOG_FILE"
-
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." >> "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
@@ -70,5 +66,6 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$(($i + 1))
 done
+
 echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." >> "$LOG_FILE"
 exit 1
