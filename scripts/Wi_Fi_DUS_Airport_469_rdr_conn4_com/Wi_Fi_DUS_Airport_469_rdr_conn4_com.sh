@@ -1,12 +1,12 @@
 #!/bin/sh
 # SCRIPT_VERSION="1.0.0"
+
 trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 LOG_FILE="/tmp/captive_portal.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 echo "Starting Conn4 multi-step automation..."
 
-# 1. Smart wait loop
 echo "Waiting for IP, Gateway, and DNS..."
 i=1
 while [ $i -le 20 ]; do
@@ -28,7 +28,7 @@ echo "Step 1: Initializing session..."
 curl -k -m 15 -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" "$BASE_URL/"
 
 echo "Step 2: Extracting scene ID..."
-SCENE_ID=$(sed -n 's/.*"id":"\([^""]*\)","module":"html-page-scene-wbs-new".*/\1/p' "$HTML_FILE" | head -n 1)
+SCENE_ID=$(sed -n 's/.*"id":"\([^"]*\)","module":"html-page-scene-wbs-new".*/\1/p' "$HTML_FILE" | head -n 1)
 echo "Extracted SCENE_ID: $SCENE_ID"
 
 if [ -z "$SCENE_ID" ]; then
@@ -37,12 +37,12 @@ if [ -z "$SCENE_ID" ]; then
 fi
 
 echo "Step 3: Submitting scene POST to trigger authorization..."
-# This portal uses a JSON/POST model via scene loader, submitting standard accept payload
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
     -X POST "${BASE_URL}/scenes/${SCENE_ID}/" \
     --data-urlencode "action=accept" --data-urlencode "terms=1"
 
-echo "Step 4: Finalizing connection via wbs/de/roaming/return/"
+echo "Step 4: Finalizing connection..."
+# This portal sequence requires hitting the roaming return URL after the scene load
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${BASE_URL}/wbs/de/roaming/return/"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..."
