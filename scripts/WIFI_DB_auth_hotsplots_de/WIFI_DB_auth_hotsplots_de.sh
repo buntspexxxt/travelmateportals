@@ -26,7 +26,7 @@ echo "Fetching portal page..." | tee -a "$LOG_FILE"
 EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" -w "%{url_effective}" -m 15 "http://neverssl.com")
 echo "Effective URL: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
 
-# Parse hidden form fields
+# Parse hidden form fields for the login submission
 HTML_CONTENT=$(cat "$HTML_FILE")
 CHALLENGE=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form_challenge" value="\([^"]*\)".*/\1/p')
 UAMIP=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form_uamip" value="\([^"]*\)".*/\1/p')
@@ -39,9 +39,9 @@ if [ -z "$CHALLENGE" ]; then
 fi
 
 echo "Submitting acceptance form..." | tee -a "$LOG_FILE"
-# Submit form matching browser behavior
+# Submit form with data-urlencode to ensure integrity
 RESPONSE_CODE=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
-    --data-urlencode "login_status_form[button]=" \
+    --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
     --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
     --data-urlencode "login_status_form[uamip]=$UAMIP" \
     --data-urlencode "login_status_form[uamport]=$UAMPORT" \
@@ -60,9 +60,9 @@ while [ $i -le 10 ]; do
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
     fi
-    echo "Attempt $i: Not connected yet. Waiting..." | tee -a "$LOG_FILE"
+    echo "Attempt $i: Not connected yet (HTTP Check Code: $CHECK_CODE). Waiting..." | tee -a "$LOG_FILE"
     sleep 4
     i=$((i + 1))
 done
-echo "ERROR: Portal request completed but no Internet connectivity established." | tee -a "$LOG_FILE"
+echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
