@@ -6,10 +6,6 @@ COOKIE_FILE=$(mktemp)
 HTML_FILE=$(mktemp)
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-decode_html_entities() {
-    echo "$1" | sed 's/&quot;/"/g; s/&amp;/\&/g; s/&#x27;/\'/g; s/&#39;/\'/g; s/&lt;/</g; s/&gt;/>/g; s/&#x3D;/=/g;'
-}
-
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 20 ]; do
@@ -23,9 +19,9 @@ while [ $i -le 20 ]; do
 done
 
 echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -L -w "%{url_effective}" -o "$HTML_FILE" "http://neverssl.com" | tr -d '\015')
-
+curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -L -o "$HTML_FILE" "http://neverssl.com"
 HTML=$(cat "$HTML_FILE")
+
 get_input_value() {
     echo "$HTML" | sed -n "s/.*name="$1"[^>]*value="\([^"]*\)".*/\1/p" | head -n 1
 }
@@ -39,7 +35,12 @@ LL=$(get_input_value "ll")
 NASID=$(get_input_value "nasid")
 CUSTOM=$(get_input_value "custom")
 
-echo "Submitting terms acceptance..." | tee -a "$LOG_FILE"
+if [ -z "$CHALLENGE" ]; then
+    echo "Failed to extract portal parameters. Exiting." | tee -a "$LOG_FILE"
+    exit 1
+fi
+
+echo "Submitting terms acceptance via POST..." | tee -a "$LOG_FILE"
 RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -L \
     --data-urlencode "haveTerms=1" \
     --data-urlencode "termsOK=on" \
@@ -54,7 +55,9 @@ RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15
     --data-urlencode "button=kostenlos einloggen" \
     "https://www.hotsplots.de/auth/login.php")
 
-echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
+echo "HTTP Response captured." | tee -a "$LOG_FILE"
+
+echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
     CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
@@ -66,4 +69,5 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$((i + 1))
 done
+echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
