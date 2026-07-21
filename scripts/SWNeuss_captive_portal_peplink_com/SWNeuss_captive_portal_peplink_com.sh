@@ -1,5 +1,5 @@
 #!/bin/sh
-# SCRIPT_VERSION="1.0.0"
+# SCRIPT_VERSION="1.1.0"
 LOG_FILE="/tmp/portal_login.log"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 COOKIE_FILE=$(mktemp)
@@ -17,37 +17,32 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching landing page to extract parameters..." | tee -a "$LOG_FILE"
+echo "Fetching landing page..." | tee -a "$LOG_FILE"
 HTML_OUT=$(mktemp)
-EFFECTIVE_URL=$(curl -k -L -m 15 -A "$USER_AGENT" -w "%{url_effective}" -o "$HTML_OUT" "http://neverssl.com" | tr -d '\015')
+# Follow redirects to catch the true captive portal gate
+EFFECTIVE_URL=$(curl -k -L -m 15 -A "$USER_AGENT" -w "%\{url_effective\}" -o "$HTML_OUT" "http://neverssl.com" | tr -d '\015')
 
-echo "Analyzing page for grant URL..." | tee -a "$LOG_FILE"
-# Extracting the grant URL from the HTML using sed as per requirements
-GRANT_URL=$(sed -n 's/.*href="\([^"]*grant?continue_url=[^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1 | sed 's/&amp;/\&/g')
+echo "Analyzing page for redirection logic..." | tee -a "$LOG_FILE"
+# The provided HTML uses JS to redirect to a subdomain of neverssl.com. We mimic the browser flow.
+# We check for a meta refresh or document.location logic
+REDIRECT_URL=$(grep -o "window.location.href = 'http://[^']*'" "$HTML_OUT" | sed "s/window.location.href = '\(.*\)'/\1/" | head -n 1)
 
-if [ -z "$GRANT_URL" ]; then
-    echo "ERROR: Could not find grant URL in HTML." | tee -a "$LOG_FILE"
-    exit 1
-fi
-
-echo "Grant URL identified: $GRANT_URL" | tee -a "$LOG_FILE"
-
-echo "Performing secondary authentication (Grant)..." | tee -a "$LOG_FILE"
-# Performing a HEAD request to capture the 'Continue-Url' header as indicated by JS in HTML
-RESPONSE_HEADERS=$(curl -k -v -I -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -H "X-Requested-With: XMLHttpRequest" "$GRANT_URL" 2>&1)
-CONTINUE_URL=$(echo "$RESPONSE_HEADERS" | grep -i "Continue-Url" | sed 's/.*Continue-Url: //I' | tr -d '\015')
-
-if [ -n "$CONTINUE_URL" ]; then
-    echo "Redirecting to final continue URL: $CONTINUE_URL" | tee -a "$LOG_FILE"
-    curl -k -L -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" "$CONTINUE_URL" -o /dev/null
+if [ -n "$REDIRECT_URL" ]; then
+    echo "JS-based redirect detected: $REDIRECT_URL" | tee -a "$LOG_FILE"
+    curl -k -L -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$REDIRECT_URL" -o /dev/null
 else
-    echo "Warning: Continue-Url header not found, proceeding with raw grant." | tee -a "$LOG_FILE"
+    # Fallback to checking for standard portal forms if no JS redirect found
+    GRANT_URL=$(sed -n 's/.*action="\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
+    if [ -n "$GRANT_URL" ]; then
+        echo "Form detected, submitting empty credentials..." | tee -a "$LOG_FILE"
+        curl -k -L -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$GRANT_URL" -d "accept=1" -o /dev/null
+    fi
 fi
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
