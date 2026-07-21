@@ -19,6 +19,7 @@ while [ $i -le 20 ]; do
 done
 
 echo "Fetching initial portal page..." >> "$LOG_FILE"
+# Extract initial redirect parameters dynamically
 curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -L -o "$HTML_FILE" "http://neverssl.com"
 
 get_input_value() {
@@ -30,7 +31,6 @@ UAMIP=$(get_input_value "uamip")
 UAMPORT=$(get_input_value "uamport")
 USERURL=$(get_input_value "userurl")
 MYLOGIN=$(get_input_value "myLogin")
-LL=$(get_input_value "ll")
 NASID=$(get_input_value "nasid")
 CUSTOM=$(get_input_value "custom")
 
@@ -48,11 +48,11 @@ curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -L \
     --data-urlencode "uamport=$UAMPORT" \
     --data-urlencode "userurl=$USERURL" \
     --data-urlencode "myLogin=${MYLOGIN:-agb}" \
-    --data-urlencode "ll=${LL:-de}" \
+    --data-urlencode "ll=de" \
     --data-urlencode "nasid=$NASID" \
     --data-urlencode "custom=${CUSTOM:-1}" \
     --data-urlencode "button=kostenlos einloggen" \
-    "https://www.hotsplots.de/auth/login.php"
+    "https://www.hotsplots.de/auth/login.php" >> "$LOG_FILE" 2>&1
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." >> "$LOG_FILE"
 i=1
