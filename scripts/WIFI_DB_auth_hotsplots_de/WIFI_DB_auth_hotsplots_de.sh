@@ -37,7 +37,6 @@ if [ -z "$CHALLENGE" ]; then
     echo "Error: Could not extract form parameters. Portal might be already authenticated." | tee -a "$LOG_FILE"
 else
     echo "Submitting acceptance form..." | tee -a "$LOG_FILE"
-    # Submit form - the portal expects the POST to the same URL retrieved from the redirect
     RESPONSE_CODE=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
         --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
         --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
