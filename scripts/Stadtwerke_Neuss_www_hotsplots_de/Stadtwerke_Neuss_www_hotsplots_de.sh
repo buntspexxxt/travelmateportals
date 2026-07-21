@@ -40,7 +40,7 @@ if [ -z "$CHALLENGE" ]; then
 fi
 
 echo "Submitting terms acceptance via POST..." >> "$LOG_FILE"
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -L \
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -L \
     --data-urlencode "haveTerms=1" \
     --data-urlencode "termsOK=on" \
     --data-urlencode "challenge=$CHALLENGE" \
@@ -52,7 +52,7 @@ RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15
     --data-urlencode "nasid=$NASID" \
     --data-urlencode "custom=${CUSTOM:-1}" \
     --data-urlencode "button=kostenlos einloggen" \
-    "https://www.hotsplots.de/auth/login.php")
+    "https://www.hotsplots.de/auth/login.php"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." >> "$LOG_FILE"
 i=1
