@@ -24,26 +24,26 @@ HTML_OUT=$(mktemp)
 trap 'rm -f "$HTML_OUT"' EXIT
 
 echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
-# Properly handle curl output for effective URL
 EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -w "%{url_effective}" -o "$HTML_OUT" "http://neverssl.com")
 echo "Effective URL: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
 
-# 3. Extract Token and Submit Identification
-echo "Extracting wbsToken..." | tee -a "$LOG_FILE"
-TOKEN_JSON=$(sed -n 's/.*conn4.hotspot.wbsToken = \({"token":.*}\);.*/\1/p' "$HTML_OUT" | sed "s/\r//g")
+# 3. Extract Token and Submit
+# Token is inside conn4.hotspot.wbsToken in the HTML
+TOKEN=$(grep -o 'wbsToken = {[^}]*}' "$HTML_OUT" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
 
-if [ -z "$TOKEN_JSON" ]; then
+if [ -z "$TOKEN" ]; then
     echo "Error: Could not extract wbsToken." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-# The portal requires the client to load a 'scene'. We simulate the sequence by POSTing the extracted state.
-# Note: This conn4 system uses JSON payloads. 
-IDENT_ENDPOINT="https://rewe-wlan.conn4.com/api/v1/ident"
-echo "Submitting identification to: $IDENT_ENDPOINT" | tee -a "$LOG_FILE"
+# The portal requires hitting the grant endpoint with the token
+# The token contains base64 encoded auth parameters
+API_HOST=$(echo "$EFFECTIVE_URL" | awk -F/ '{print $3}')
+GRANT_URL="https://$API_HOST/grant"
 
-RESPONSE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -H "Content-Type: application/json" -d "$TOKEN_JSON" -o /dev/null -w "%{http_code}" -m 15 "$IDENT_ENDPOINT")
-echo "HTTP Response: $RESPONSE" | tee -a "$LOG_FILE"
+echo "Submitting token to $GRANT_URL..." | tee -a "$LOG_FILE"
+RESPONSE_CODE=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -o /dev/null -w "%{http_code}" -m 15 --data-urlencode "token=$TOKEN" "$GRANT_URL")
+echo "HTTP Response: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 # 4. Connectivity Check
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..."
@@ -58,5 +58,6 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$(($i + 1))
 done
+
 echo "ERROR: Portal request completed but no Internet connectivity established."
 exit 1
