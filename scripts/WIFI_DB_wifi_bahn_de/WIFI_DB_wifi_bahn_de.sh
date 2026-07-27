@@ -19,26 +19,26 @@ while [ $i -le 20 ]; do
 done
 
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# Dynamic domain resolution based on previous findings
 TARGET_DOMAIN="wifi.bahn.de"
+if ! nslookup "$TARGET_DOMAIN" >/dev/null 2>&1; then
+    TARGET_DOMAIN="login.wifionice.de"
+fi
 
-# Try fetching the token from both potential domains
-for DOMAIN in "wifi.bahn.de" "login.wifionice.de"; do
-    echo "Attempting to fetch session from ${DOMAIN}..." | tee -a "$LOG_FILE"
-    curl -k -v -A "$UA" -c "$COOKIE_FILE" -o /dev/null -m 15 "https://${DOMAIN}/en/" >>"$LOG_FILE" 2>&1
-    CSRF_TOKEN=$(grep 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}')
-    if [ -n "$CSRF_TOKEN" ]; then
-        TARGET_DOMAIN="$DOMAIN"
-        break
-    fi
-done
+echo "Fetching initial CSRF token from https://${TARGET_DOMAIN}/en/" | tee -a "$LOG_FILE"
+curl -k -v -A "$UA" -c "$COOKIE_FILE" -o /dev/null -m 15 "https://${TARGET_DOMAIN}/en/" >>"$LOG_FILE" 2>&1
 
+CSRF_TOKEN=$(grep 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}')
 if [ -z "$CSRF_TOKEN" ]; then
-    echo "Failed to extract CSRF token from any domain!" | tee -a "$LOG_FILE"
+    echo "Failed to extract CSRF token!" | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Submitting login POST request with CSRF Token: ${CSRF_TOKEN}" | tee -a "$LOG_FILE"
-RESPONSE=$(curl -k -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -H "Cookie: csrf=${CSRF_TOKEN}" --data-urlencode "login=true" --data-urlencode "CSRFToken=${CSRF_TOKEN}" -m 15 "https://${TARGET_DOMAIN}/en/")
+echo "Submitting login POST request..." | tee -a "$LOG_FILE"
+# Using data-urlencode to ensure proper formatting
+RESPONSE=$(curl -k -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" --data-urlencode "login=true" --data-urlencode "CSRFToken=${CSRF_TOKEN}" -m 15 "https://${TARGET_DOMAIN}/en/")
+echo "HTTP Response: $?" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
