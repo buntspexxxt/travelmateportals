@@ -32,7 +32,7 @@ echo "Attempting to start scene session..."
 # Based on the HTML, the portal expects to load a scene via an internal API
 RESPONSE=$(curl -k -X POST -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     -H "Content-Type: application/json" \
-    -d "{"token":"$TOKEN"}" \
+    -d "{\"token\":\"$TOKEN\"}" \
     -m 15 -w "
 HTTP_CODE:%{http_code}" "https://469.rdr.conn4.com/wbs/api/v1/sessions")
 

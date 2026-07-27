@@ -23,7 +23,7 @@ echo "Fetching initial portal page..." >> "$LOG_FILE"
 curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -m 15 -L -o "$HTML_FILE" "http://neverssl.com"
 
 get_input_value() {
-    sed -n "s/.*name="$1" value="\([^"]*\)".*/\1/p" "$HTML_FILE" | head -n 1 | tr -d '\015'
+    sed -n 's/.*name="'"$1"'" value="\([^"]*\)".*/\1/p' "$HTML_FILE" | head -n 1 | tr -d '\015'
 }
 
 CHALLENGE=$(get_input_value "challenge")

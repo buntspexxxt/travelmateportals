@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # SCRIPT_VERSION="1.0.0"
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE="/tmp/portal_cookies.txt"
@@ -19,7 +19,7 @@ CHECK_URL="http://neverssl.com"
 echo "Detecting portal redirect..." | tee -a "$LOG_FILE"
 REDIRECT_URL=$(curl -m 15 -k -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -w "%{url_effective}" -o /dev/null "$CHECK_URL" | tr -d '\015')
 
-if [[ "$REDIRECT_URL" == "$CHECK_URL" ]]; then
+if [ "$REDIRECT_URL" = "$CHECK_URL" ]; then
     echo "No redirect found, already connected." | tee -a "$LOG_FILE"
     exit 0
 fi
