@@ -21,26 +21,24 @@ done
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 TARGET_DOMAIN="wifi.bahn.de"
 
-echo "Fetching session from ${TARGET_DOMAIN}..." | tee -a "$LOG_FILE"
-# Using --ciphers to bypass legacy renegotiation and -k for self-signed certs
-curl -k -v -A "$UA" -c "$COOKIE_FILE" --ciphers 'DEFAULT:@SECLEVEL=1' -o /dev/null -m 15 "https://${TARGET_DOMAIN}/en/" 2>>"$LOG_FILE"
-
-CSRF_TOKEN=$(grep 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}')
-
-if [ -z "$CSRF_TOKEN" ]; then
-    echo "Primary domain failed. Trying login.wifionice.de..." | tee -a "$LOG_FILE"
-    TARGET_DOMAIN="login.wifionice.de"
-    curl -k -v -A "$UA" -c "$COOKIE_FILE" --ciphers 'DEFAULT:@SECLEVEL=1' -o /dev/null -m 15 "https://${TARGET_DOMAIN}/en/" 2>>"$LOG_FILE"
+# Try fetching the token from both potential domains
+for DOMAIN in "wifi.bahn.de" "login.wifionice.de"; do
+    echo "Attempting to fetch session from ${DOMAIN}..." | tee -a "$LOG_FILE"
+    curl -k -v -A "$UA" -c "$COOKIE_FILE" -o /dev/null -m 15 "https://${DOMAIN}/en/" >>"$LOG_FILE" 2>&1
     CSRF_TOKEN=$(grep 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}')
-fi
+    if [ -n "$CSRF_TOKEN" ]; then
+        TARGET_DOMAIN="$DOMAIN"
+        break
+    fi
+done
 
 if [ -z "$CSRF_TOKEN" ]; then
-    echo "Failed to extract CSRF token!" | tee -a "$LOG_FILE"
+    echo "Failed to extract CSRF token from any domain!" | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Submitting login POST request..." | tee -a "$LOG_FILE"
-curl -k -v -A "$UA" -b "$COOKIE_FILE" --ciphers 'DEFAULT:@SECLEVEL=1' -H "Cookie: csrf=${CSRF_TOKEN}" --data-urlencode "login=true" --data-urlencode "CSRFToken=${CSRF_TOKEN}" -m 15 "https://${TARGET_DOMAIN}/en/" >>"$LOG_FILE" 2>&1
+echo "Submitting login POST request with CSRF Token: ${CSRF_TOKEN}" | tee -a "$LOG_FILE"
+RESPONSE=$(curl -k -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -H "Cookie: csrf=${CSRF_TOKEN}" --data-urlencode "login=true" --data-urlencode "CSRFToken=${CSRF_TOKEN}" -m 15 "https://${TARGET_DOMAIN}/en/")
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
