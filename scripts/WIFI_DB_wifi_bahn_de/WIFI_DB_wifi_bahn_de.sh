@@ -20,36 +20,31 @@ while [ $i -le 20 ]; do
 done
 
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-DOMAINS="wifi.bahn.de login.wifionice.de"
+TARGET_DOMAIN="wifi.bahn.de"
 
-CSRF_TOKEN=""
-TARGET_DOMAIN=""
+# Note: The error 'unsafe legacy renegotiation disabled' in previous logs suggests a need for --insecure 
+# and potentially dealing with old SSL handshake versions, curl -k covers this.
+echo "Fetching initial page to extract CSRF token..." | tee -a "$LOG_FILE"
+curl -k -v -A "$UA" -c "$COOKIE_FILE" -o /tmp/portal_html -m 15 "https://$TARGET_DOMAIN/en/" >>"$LOG_FILE" 2>&1
 
-for DOMAIN in $DOMAINS; do
-    echo "Attempting to fetch session from $DOMAIN..." | tee -a "$LOG_FILE"
-    # Use -c to save cookies to capture the CSRF token if sent as a cookie
-    curl -k -v -A "$UA" -c "$COOKIE_FILE" -o /dev/null -m 15 "https://$DOMAIN/en/" >>"$LOG_FILE" 2>&1
-    
-    # Check if token exists in cookie file (standard bahn behavior)
+CSRF_TOKEN=$(grep -o 'name="CSRFToken" value="[^"]*"' /tmp/portal_html | sed 's/.*value="\([^"]*\)".*/\1/' | tr -d '\015')
+
+if [ -z "$CSRF_TOKEN" ]; then
+    # Fallback attempt via cookie grep if input field extraction fails
     CSRF_TOKEN=$(grep -i 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}' | tr -d '\015')
-    
-    if [ -n "$CSRF_TOKEN" ]; then
-        echo "CSRF Token found: $CSRF_TOKEN" | tee -a "$LOG_FILE"
-        TARGET_DOMAIN="$DOMAIN"
-        break
-    fi
-done
+fi
 
 if [ -z "$CSRF_TOKEN" ]; then
     echo "ERROR: Failed to extract CSRF token." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Submitting login request to $TARGET_DOMAIN..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -k -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
+echo "Submitting login POST request..." | tee -a "$LOG_FILE"
+# Using data-urlencode to ensure clean payload transmission
+curl -k -v -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
     --data-urlencode "login=true" \
     --data-urlencode "CSRFToken=$CSRF_TOKEN" \
-    -m 15 "https://$TARGET_DOMAIN/en/" 2>>"$LOG_FILE")
+    -m 15 "https://$TARGET_DOMAIN/en/" >>"$LOG_FILE" 2>&1
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
