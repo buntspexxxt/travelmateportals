@@ -1,36 +1,60 @@
-#!/bin/bash
-
-# SCRIPT_VERSION="1.1.0"
-
-check_internet() {
-    curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | grep -qE '204|200'
-}
-
+#!/bin/sh
+# SCRIPT_VERSION="1.0.0"
 
 LOG_FILE="/tmp/wifi_login.log"
 COOKIE_JAR="/tmp/cookies.txt"
+HTML_OUT="/tmp/portal_html.tmp"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-echo "Waiting for DHCP (IP & Gateway)..." | tee -a "$LOG_FILE"
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-    if ip route | grep -q default; then
-        echo "Gateway found! DHCP successful." | tee -a "$LOG_FILE"
-        sleep 6
+trap 'rm -f "$COOKIE_JAR" "$HTML_OUT"' EXIT
+
+echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
+i=1
+while [ $i -le 20 ]; do
+    if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
+        echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
+        sleep 2
         break
     fi
     sleep 1
+    i=$((i + 1))
 done
 
-echo "Fetching initial portal page to extract session and tokens..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -m 15 -v -A "$USER_AGENT" -c "$COOKIE_JAR" -b "$COOKIE_JAR" https://rewe-wlan.conn4.com/ 2>&1)
+echo "Fetching portal index to initialize session..." | tee -a "$LOG_FILE"
+EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_JAR" -b "$COOKIE_JAR" -w "%\{url_effective}" -o "$HTML_OUT" -m 15 "https://rewe-wlan.conn4.com/")
 
-# The portal logic uses a client-side JS scene loader. 
-# Based on the HTML, it checks for a 'wbsToken' in the JavaScript context.
-# Since this is a simple 'accept terms' style landing, hitting the root often triggers the session.
+echo "Extracting WBS Token from HTML..." | tee -a "$LOG_FILE"
+HTML_CONTENT=$(cat "$HTML_OUT")
+# Extract the JSON object from conn4.hotspot.wbsToken
+WBS_TOKEN_JSON=$(echo "$HTML_CONTENT" | sed -n 's/.*conn4.hotspot.wbsToken = \({.*}\);.*/\1/p')
 
-echo "Sending secondary navigation to ensure session registration..." | tee -a "$LOG_FILE"
-# Simulate the browser navigation to the return URL found in the XML comment
-curl -m 15 -v -A "$USER_AGENT" -c "$COOKIE_JAR" -b "$COOKIE_JAR" https://wbs-rewe.conn4.com/de/roaming/return/ | tee -a "$LOG_FILE"
+if [ -z "$WBS_TOKEN_JSON" ]; then
+    echo "Error: Failed to find wbsToken in portal HTML." | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-echo "Checking internet connectivity..." | tee -a "$LOG_FILE"
-check_internet&& echo "Login Successful!" && exit 0 || { echo "Login failed or no internet access."; exit 1; }
+# Using standard shell to extract values. Since no jq is assumed, we perform simple extraction
+# Extract base64 token
+TOKEN=$(echo "$WBS_TOKEN_JSON" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+
+echo "Attempting to post the wbsToken to the login endpoint..." | tee -a "$LOG_FILE"
+# Based on portal structure, we send a POST with the token to complete the flow
+RESPONSE=$(curl -k -v -A "$USER_AGENT" -c "$COOKIE_JAR" -b "$COOKIE_JAR" -X POST \
+    -H "Content-Type: application/json" \
+    -d "{"token":"$TOKEN"}" \
+    -m 15 "https://rewe-wlan.conn4.com/admon-assets/log.php?channel=clienterror" 2>&1)
+
+echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
+i=1
+while [ $i -le 10 ]; do
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
+        echo "SUCCESS: Internet connection verified!"
+        exit 0
+    fi
+    echo "Attempt $i: Not connected yet (HTTP Check Code: $CHECK_CODE). Waiting..."
+    sleep 4
+    i=$((i + 1))
+done
+echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
+exit 1
