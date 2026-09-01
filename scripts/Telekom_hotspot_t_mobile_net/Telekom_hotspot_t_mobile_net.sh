@@ -19,6 +19,7 @@ done
 
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+# Existing Logic
 echo "Fetching captive portal redirect..." | tee -a "$LOG_FILE"
 EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -o "$HTML_FILE" -w "%{url_effective}" "http://neverssl.com")
 
@@ -31,16 +32,21 @@ if [ -z "$LOGIN_URL" ]; then
 fi
 
 echo "Submitting free login POST request..." | tee -a "$LOG_FILE"
-# Using -X POST and --data-urlencode to safely handle parameters
-RESULT=$(curl -v -k -L -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
+curl -v -k -L -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
     --data-urlencode "UserName=" \
     --data-urlencode "Password=" \
     --data-urlencode "FNAME=0" \
     --data-urlencode "button=Login" \
-    --data-urlencode "OriginatingServer=http://neverssl.com" "$LOGIN_URL")
+    --data-urlencode "OriginatingServer=http://neverssl.com" "$LOGIN_URL" > /dev/null
 
-echo "Accessing REST session initialization..." | tee -a "$LOG_FILE"
-curl -v -k -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "https://hotspot.t-mobile.net/wlan/rest/login/session" > /dev/null 2>&1
+# New Page Handling (The portal likely requires a REST confirmation for the free session)
+echo "Accessing REST session confirmation..." | tee -a "$LOG_FILE"
+# Using the known API endpoint for Telekom hotspots identified in logic analysis
+curl -v -k -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
+    --data-urlencode "UserName=" \
+    --data-urlencode "Password=" \
+    --data-urlencode "FNAME=0" \
+    --data-urlencode "button=Login" > /dev/null
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
