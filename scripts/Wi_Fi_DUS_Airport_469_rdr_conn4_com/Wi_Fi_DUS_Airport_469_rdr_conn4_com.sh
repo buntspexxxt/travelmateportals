@@ -1,5 +1,5 @@
 #!/bin/sh
-# SCRIPT_VERSION="1.0.0"
+# SCRIPT_VERSION="1.1.0"
 trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 LOG_FILE="/tmp/captive_portal.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -23,7 +23,7 @@ COOKIE_FILE=$(mktemp)
 HTML_FILE=$(mktemp)
 BASE_URL="https://469.rdr.conn4.com"
 
-echo "Step 1: Initial load..."
+echo "Step 1: Fetching initial state..."
 curl -k -m 15 -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" "$BASE_URL/"
 
 echo "Step 2: Extracting scene ID..."
@@ -35,13 +35,14 @@ if [ -z "$SCENE_ID" ]; then
     exit 1
 fi
 
-echo "Step 3: Submitting acceptance POST..."
-curl -k -v -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
+echo "Step 3: Submitting scene POST to trigger login/terms..."
+# Conn4 portals usually expect specific form actions. Using POST with action=accept.
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
     -X POST "${BASE_URL}/scenes/${SCENE_ID}/" \
     --data-urlencode "action=accept" --data-urlencode "terms=1"
 
-echo "Step 4: Requesting roaming return..."
-curl -k -v -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${BASE_URL}/wbs/de/roaming/return/"
+echo "Step 4: Attempting to finalize connection via roaming return..."
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${BASE_URL}/wbs/de/roaming/return/"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..."
 i=1
