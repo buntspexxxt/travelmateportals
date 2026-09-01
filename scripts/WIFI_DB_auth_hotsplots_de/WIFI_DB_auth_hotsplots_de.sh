@@ -22,7 +22,7 @@ done
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 echo "Fetching portal page..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" -w "%\{url_effective\}" -m 15 "http://neverssl.com")
+EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" -w "%{url_effective}" -m 15 "http://neverssl.com")
 echo "Effective URL: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
 
 HTML_CONTENT=$(cat "$HTML_FILE")
@@ -37,21 +37,21 @@ if [ -z "$CHALLENGE" ]; then
 fi
 
 echo "Submitting acceptance form..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
+# We use the extracted action or the current URL. Based on observation, the form submits to the current landing page.
+STATUS_CODE=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
     --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
     --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
     --data-urlencode "login_status_form[uamip]=$UAMIP" \
     --data-urlencode "login_status_form[uamport]=$UAMPORT" \
     --data-urlencode "login_status_form[_token]=$TOKEN" \
-    -w "
-HTTP_CODE:%\{http_code\}" -o /dev/null "$EFFECTIVE_URL")
+    -w "%{http_code}" -o /dev/null "$EFFECTIVE_URL")
 
-echo "$RESPONSE" | tee -a "$LOG_FILE"
+echo "HTTP Response from login: $STATUS_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
