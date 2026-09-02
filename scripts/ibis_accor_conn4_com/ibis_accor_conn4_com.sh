@@ -1,5 +1,5 @@
 #!/bin/sh
-# SCRIPT_VERSION="1.3.0"
+# SCRIPT_VERSION="1.0.0"
 
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_JAR="/tmp/ibis_cookies.txt"
@@ -19,12 +19,12 @@ while [ $i -le 20 ]; do
 done
 
 echo "Fetching initial portal redirect..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_JAR" -w "%{url_effective}" -o /dev/null -m 15 "http://neverssl.com")
+EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_JAR" -w "% {url_effective}" -o /dev/null -m 15 "http://neverssl.com" | sed "s/\r//g")
 echo "Base URL: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
 
 echo "Extracting scene configuration..." | tee -a "$LOG_FILE"
 HTML_BODY=$(curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 "$EFFECTIVE_URL")
-SCENE_PLAYER_URI=$(echo "$HTML_BODY" | sed -n 's/.*"scenePlayerUri":"\([^"]*\)".*/\1/p')
+SCENE_PLAYER_URI=$(echo "$HTML_BODY" | sed -n 's/.*"scenePlayerUri":"\([^" ]*\)".*/\1/p')
 SCENE_PLAYER_URL="https://accor.conn4.com${SCENE_PLAYER_URI}"
 
 echo "Fetching player token..." | tee -a "$LOG_FILE"
