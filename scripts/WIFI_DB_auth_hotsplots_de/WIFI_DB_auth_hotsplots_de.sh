@@ -21,7 +21,7 @@ done
 
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-echo "Fetching portal page to obtain initial cookies and state..." | tee -a "$LOG_FILE"
+echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
 EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" -w "%\{url_effective\}" -m 15 "http://neverssl.com")
 
 HTML_CONTENT=$(cat "$HTML_FILE")
@@ -30,13 +30,12 @@ UAMIP=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form_uamip" value="\
 UAMPORT=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form_uamport" value="\([^"]*\)".*/\1/p')
 TOKEN=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form__token" value="\([^"]*\)".*/\1/p')
 
-if [ -z "$CHALLENGE" ]; then
-    echo "Error: Could not extract form parameters from the landing page." | tee -a "$LOG_FILE"
+if [ -z "$CHALLENGE" ] || [ -z "$TOKEN" ]; then
+    echo "Error: Could not extract form parameters." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Submitting login form..." | tee -a "$LOG_FILE"
-# Using the URL from the effective URL redirect as the submission target
+echo "Submitting form to Hotsplots..." | tee -a "$LOG_FILE"
 TARGET_URL=$(echo "$EFFECTIVE_URL" | sed 's|?.*||')
 
 RESPONSE_CODE=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
@@ -62,5 +61,5 @@ while [ $i -le 10 ]; do
     i=$((i + 1))
 done
 
-echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
+echo "ERROR: Portal request completed but no Internet connectivity established." | tee -a "$LOG_FILE"
 exit 1
