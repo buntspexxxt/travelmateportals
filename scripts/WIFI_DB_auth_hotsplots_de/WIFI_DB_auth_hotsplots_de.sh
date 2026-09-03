@@ -22,7 +22,7 @@ done
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" -w "%\{url_effective\}" -m 15 "http://neverssl.com")
+EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" -w "%{url_effective}" -m 15 "http://neverssl.com")
 
 HTML_CONTENT=$(cat "$HTML_FILE")
 CHALLENGE=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form_challenge" value="\([^"]*\)".*/\1/p')
@@ -36,22 +36,22 @@ if [ -z "$CHALLENGE" ] || [ -z "$TOKEN" ]; then
 fi
 
 echo "Submitting form to Hotsplots..." | tee -a "$LOG_FILE"
-TARGET_URL=$(echo "$EFFECTIVE_URL" | sed 's|?.*||')
-
+# The portal requires POSTing to the same URL, which is the effective auth URL
+# Use --data-urlencode to ensure dynamic values are handled correctly
 RESPONSE_CODE=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
     --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
     --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
     --data-urlencode "login_status_form[uamip]=$UAMIP" \
     --data-urlencode "login_status_form[uamport]=$UAMPORT" \
     --data-urlencode "login_status_form[_token]=$TOKEN" \
-    -w "%\{http_code\}" -o /dev/null "$TARGET_URL")
+    -w "%{http_code}" -o /dev/null "$EFFECTIVE_URL")
 
 echo "HTTP Response from login: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
@@ -61,5 +61,5 @@ while [ $i -le 10 ]; do
     i=$((i + 1))
 done
 
-echo "ERROR: Portal request completed but no Internet connectivity established." | tee -a "$LOG_FILE"
+echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
