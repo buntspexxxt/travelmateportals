@@ -1,17 +1,17 @@
 #!/bin/sh
-# SCRIPT_VERSION="1.0.0"
+# SCRIPT_VERSION="1.1.0"
 LOG_FILE="/tmp/portal_login.log"
 trap 'rm -f "$COOKIE_FILE" "$HTML_OUT"' EXIT
 COOKIE_FILE=$(mktemp)
 HTML_OUT=$(mktemp)
 
-echo "Starting refined Stadtwerke_Neuss (Hotsplots) login process..." | tee -a "$LOG_FILE"
+echo "Starting Hotsplots login process for Stadtwerke_Neuss..." | tee -a "$LOG_FILE"
 
-echo "Waiting for network readiness..." | tee -a "$LOG_FILE"
+echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 20 ]; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
-        echo "Network ready." | tee -a "$LOG_FILE"
+        echo "Network and DNS are ready!" | tee -a "$LOG_FILE"
         sleep 2
         break
     fi
@@ -19,7 +19,7 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching portal index to capture current session tokens..." | tee -a "$LOG_FILE"
+echo "Fetching captive portal page..." | tee -a "$LOG_FILE"
 EFFECTIVE_URL=$(curl -k -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -c "$COOKIE_FILE" -w "%{url_effective}" -o "$HTML_OUT" -m 15 "http://neverssl.com")
 
 CHALLENGE=$(sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
@@ -29,12 +29,13 @@ NASID=$(sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 USERURL=$(sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
 
 if [ -z "$CHALLENGE" ]; then
-    echo "ERROR: Failed to extract hidden form fields. Portal may already be authorized." | tee -a "$LOG_FILE"
-    exit 0
+    echo "ERROR: Could not extract dynamic challenge token." | tee -a "$LOG_FILE"
+    exit 1
 fi
 
-echo "Posting login credentials to Hotsplots endpoint..." | tee -a "$LOG_FILE"
-STATUS=$(curl -k -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0" -c "$COOKIE_FILE" -b "$COOKIE_FILE" \
+echo "Submitting form with AGB acceptance..." | tee -a "$LOG_FILE"
+RESPONSE_CODE=$(curl -k -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+    -c "$COOKIE_FILE" -b "$COOKIE_FILE" \
     --data-urlencode "haveTerms=1" \
     --data-urlencode "termsOK=on" \
     --data-urlencode "challenge=$CHALLENGE" \
@@ -46,9 +47,9 @@ STATUS=$(curl -k -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0
     --data-urlencode "nasid=$NASID" \
     --data-urlencode "custom=1" \
     --data-urlencode "button=kostenlos einloggen" \
-    -w "%{http_code}" -o /dev/null -m 20 "https://www.hotsplots.de/auth/login.php")
+    -w "%{http_code}" -o /dev/null -m 15 "https://www.hotsplots.de/auth/login.php")
 
-echo "Final status code: $STATUS" | tee -a "$LOG_FILE"
+echo "HTTP Response from login post: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
@@ -58,9 +59,9 @@ while [ $i -le 10 ]; do
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
     fi
-    echo "Attempt $i: Checking connectivity..." | tee -a "$LOG_FILE"
+    echo "Attempt $i: Not connected yet (HTTP Check Code: $CHECK_CODE). Waiting..." | tee -a "$LOG_FILE"
     sleep 4
     i=$((i + 1))
 done
-echo "ERROR: No internet connectivity detected." | tee -a "$LOG_FILE"
+echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
