@@ -1,11 +1,11 @@
 #!/bin/sh
 # SCRIPT_VERSION="1.0.0"
 LOG_FILE="/tmp/portal_login.log"
-USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 COOKIE_FILE=$(mktemp)
 trap 'rm -f "$COOKIE_FILE"' EXIT
+USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-echo "Waiting for network..." | tee -a "$LOG_FILE"
+echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 20 ]; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
@@ -17,25 +17,24 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Initializing Peplink session resume..." | tee -a "$LOG_FILE"
+echo "Fetching initial portal page to get session cookies..." | tee -a "$LOG_FILE"
 HTML_OUT=$(mktemp)
-# The JS logic performs an AJAX call to /cp/session/resume. We simulate the request parameters extracted from the HTML context.
-# The checksum and other parameters are persistent in the provided HTML context.
-RESUME_URL="https://guest7.ic.peplink.com/cp/session/resume"
-POST_DATA="client_mac=D2:10:9F:2A:78:73&sn=2939-508B-F086&ssid=~CP_KEY_KoqKCOTKsie-rX87wdb1qA&time=1788350181&cp_id=~CP_KEY_KoqKCOTKsie-rX87wdb1qA&checksum=5889fe7db4d9cabaf3a8ce56d7123d8879548cfc"
+curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "http://neverssl.com"
 
-echo "Attempting to resume session..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" "$RESUME_URL")
-echo "Response: $RESPONSE" | tee -a "$LOG_FILE"
+echo "Extracting grant URL from HTML..." | tee -a "$LOG_FILE"
+# The portal requires hitting the /grant endpoint. We extract the URL from the button href attribute.
+GRANT_URL=$(sed -n 's/.*<a class="button" href="\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1 | sed 's/&amp;/\&/g')
 
-# If session resume returns data, we need to call the login endpoint
-echo "Finalizing login..." | tee -a "$LOG_FILE"
-LOGIN_URL="https://guest7.ic.peplink.com/cp/login"
-# Constructing parameters based on the JS toResumeLogin logic
-# We use the known parameters required for the login handshake
-LOGIN_PARAMS="?resume=true&command=login&lang=en&sn=2939-508B-F086&ssid=~CP_KEY_KoqKCOTKsie-rX87wdb1qA&ip=10.200.11.60&client_mac=D2:10:9F:2A:78:73&host_ip=192.168.50.1&host_mac=A8:C0:EA:52:CA:60&time=1788350181&cp_id=~CP_KEY_KoqKCOTKsie-rX87wdb1qA&checksum=5889fe7db4d9cabaf3a8ce56d7123d8879548cfc"
+if [ -z "$GRANT_URL" ]; then
+    echo "ERROR: Could not extract GRANT_URL" | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${LOGIN_URL}${LOGIN_PARAMS}" -o /dev/null
+echo "Executing grant request to authorize..." | tee -a "$LOG_FILE"
+# Based on the JS, the portal performs a HEAD request to the current location to get a header, then navigates.
+# We follow the redirect to the final auth state.
+RESPONSE_CODE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -w "% {http_code}" -o /dev/null "$GRANT_URL")
+echo "Grant response code: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
