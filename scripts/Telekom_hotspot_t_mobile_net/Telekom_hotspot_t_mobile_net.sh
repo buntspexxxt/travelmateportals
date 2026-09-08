@@ -19,36 +19,19 @@ done
 
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-# Existing Logic
-echo "Fetching captive portal redirect..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -o "$HTML_FILE" -w "%{url_effective}" "http://neverssl.com")
+echo "Fetching captive portal landing page..." | tee -a "$LOG_FILE"
+curl -v -k -L -A "$USER_AGENT" -o "$HTML_FILE" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 "https://hotspot.t-mobile.net/" | tee -a "$LOG_FILE"
 
-echo "Extracting Login URL from HTML..." | tee -a "$LOG_FILE"
-LOGIN_URL=$(sed -n 's/.*<loginurl>\([^<]*\)<\/loginurl>.*/\1/p' "$HTML_FILE" | sed 's/&amp;/\&/g' | tr -d '\15')
-
-if [ -z "$LOGIN_URL" ]; then
-    echo "ERROR: Could not extract Login URL." | tee -a "$LOG_FILE"
-    exit 1
-fi
-
-echo "Submitting free login POST request..." | tee -a "$LOG_FILE"
-curl -v -k -L -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
+echo "Submitting session start request to Telekom API..." | tee -a "$LOG_FILE"
+# Based on analysis of telekom.login logic and the ECOM3 platform structure
+# We hit the rest/freeLogin endpoint with session context from initial cookies
+RESPONSE=$(curl -v -k -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
     --data-urlencode "UserName=" \
     --data-urlencode "Password=" \
     --data-urlencode "FNAME=0" \
-    --data-urlencode "button=Login" \
-    --data-urlencode "OriginatingServer=http://neverssl.com" "$LOGIN_URL" > /dev/null
+    --data-urlencode "button=Login")
 
-# New Page Handling (The portal likely requires a REST confirmation for the free session)
-echo "Accessing REST session confirmation..." | tee -a "$LOG_FILE"
-# Using the known API endpoint for Telekom hotspots identified in logic analysis
-curl -v -k -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
-    --data-urlencode "UserName=" \
-    --data-urlencode "Password=" \
-    --data-urlencode "FNAME=0" \
-    --data-urlencode "button=Login" > /dev/null
-
-echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
+echo "Response received. Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
     CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
@@ -60,5 +43,6 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$((i + 1))
 done
+
 echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
