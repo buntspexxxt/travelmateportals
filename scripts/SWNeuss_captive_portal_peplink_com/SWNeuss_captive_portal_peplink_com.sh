@@ -17,24 +17,30 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching initial portal page to get session cookies..." | tee -a "$LOG_FILE"
+echo "Fetching captive portal landing page..." | tee -a "$LOG_FILE"
 HTML_OUT=$(mktemp)
-curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "http://neverssl.com"
+curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "http://neverssl.com"
 
-echo "Extracting grant URL from HTML..." | tee -a "$LOG_FILE"
-# The portal requires hitting the /grant endpoint. We extract the URL from the button href attribute.
-GRANT_URL=$(sed -n 's/.*<a class="button" href="\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1 | sed 's/&amp;/\&/g')
+echo "Extracting API details from page..." | tee -a "$LOG_FILE"
+# Extract parameters used by Peplink JS to perform the session resume
+CLIENT_MAC=$(sed -n 's/.*client_mac: "\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
+SN=$(sed -n 's/.*sn: "\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
+SSID=$(sed -n 's/.*ssid: "\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
+TIME=$(sed -n 's/.*time:"\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
+CP_ID=$(sed -n 's/.*cp_id: "\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
+CHECKSUM=$(sed -n 's/.*checksum:"\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
 
-if [ -z "$GRANT_URL" ]; then
-    echo "ERROR: Could not extract GRANT_URL" | tee -a "$LOG_FILE"
+if [ -z "$CLIENT_MAC" ]; then
+    echo "ERROR: Failed to extract session parameters." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Executing grant request to authorize..." | tee -a "$LOG_FILE"
-# Based on the JS, the portal performs a HEAD request to the current location to get a header, then navigates.
-# We follow the redirect to the final auth state.
-RESPONSE_CODE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -w "% {http_code}" -o /dev/null "$GRANT_URL")
-echo "Grant response code: $RESPONSE_CODE" | tee -a "$LOG_FILE"
+echo "Attempting session resume via API..." | tee -a "$LOG_FILE"
+API_RESPONSE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "client_mac=$CLIENT_MAC" -d "sn=$SN" -d "ssid=$SSID" -d "time=$TIME" -d "cp_id=$CP_ID" -d "checksum=$CHECKSUM" -d "_=$(date +%s%3N)" "https://guest7.ic.peplink.com/cp/session/resume")
+
+echo "Checking if secondary interaction is required..." | tee -a "$LOG_FILE"
+# If response contains needs_sign_in or similar logic, we perform the follow-up request
+curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "client_mac=$CLIENT_MAC" -d "sn=$SN" -d "ssid=$SSID" -d "time=$TIME" -d "cp_id=$CP_ID" -d "checksum=$CHECKSUM" -d "command=login" "https://guest7.ic.peplink.com/cp/login"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
