@@ -19,19 +19,22 @@ done
 
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-echo "Fetching captive portal landing page..." | tee -a "$LOG_FILE"
+echo "Fetching landing page to obtain session context..." | tee -a "$LOG_FILE"
 curl -v -k -L -A "$USER_AGENT" -o "$HTML_FILE" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 "https://hotspot.t-mobile.net/" | tee -a "$LOG_FILE"
 
-echo "Submitting session start request to Telekom API..." | tee -a "$LOG_FILE"
-# Based on analysis of telekom.login logic and the ECOM3 platform structure
-# We hit the rest/freeLogin endpoint with session context from initial cookies
+echo "Extracting redirect URL from HTML content..." | tee -a "$LOG_FILE"
+REDIRECT_URL=$(grep -oE "https://hotspot.t-mobile.net/[^"]+" "$HTML_FILE" | head -n 1 | sed 's/&amp;/\&/g')
+
+echo "Executing primary free login POST request..." | tee -a "$LOG_FILE"
 RESPONSE=$(curl -v -k -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "https://hotspot.t-mobile.net/wlan/rest/freeLogin" \
     --data-urlencode "UserName=" \
     --data-urlencode "Password=" \
     --data-urlencode "FNAME=0" \
     --data-urlencode "button=Login")
 
-echo "Response received. Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
+echo "Response: $RESPONSE" | tee -a "$LOG_FILE"
+
+echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
     CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
