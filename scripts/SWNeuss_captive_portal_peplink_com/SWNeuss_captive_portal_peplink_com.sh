@@ -17,30 +17,26 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching captive portal landing page..." | tee -a "$LOG_FILE"
-HTML_OUT=$(mktemp)
-curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_OUT" "http://neverssl.com"
+echo "Fetching captive portal redirect URL..." | tee -a "$LOG_FILE"
+REDIRECT_URL=$(curl -k -L -w "%{url_effective}" -o /dev/null -s -A "$USER_AGENT" "http://neverssl.com")
 
-echo "Extracting API details from page..." | tee -a "$LOG_FILE"
-# Extract parameters used by Peplink JS to perform the session resume
-CLIENT_MAC=$(sed -n 's/.*client_mac: "\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
-SN=$(sed -n 's/.*sn: "\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
-SSID=$(sed -n 's/.*ssid: "\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
-TIME=$(sed -n 's/.*time:"\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
-CP_ID=$(sed -n 's/.*cp_id: "\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
-CHECKSUM=$(sed -n 's/.*checksum:"\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1)
+echo "Fetching portal page to extract dynamic paths..." | tee -a "$LOG_FILE"
+HTML_FILE=$(mktemp)
+curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_FILE" "$REDIRECT_URL"
 
-if [ -z "$CLIENT_MAC" ]; then
-    echo "ERROR: Failed to extract session parameters." | tee -a "$LOG_FILE"
+echo "Extracting GRANT URL from page..." | tee -a "$LOG_FILE"
+# Extract the grant URL from the link href or JS logic, decoding entities
+GRANT_URL=$(sed -n 's/.*<a class="button" href="\([^"]*\)".*/\1/p' "$HTML_FILE" | head -n 1 | sed 's/&amp;/\&/g; s/&#x2F;/\//g; s/&#x3D;/=/g')
+
+if [ -z "$GRANT_URL" ]; then
+    echo "ERROR: Could not find grant URL in HTML. Checking JS logic..." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Attempting session resume via API..." | tee -a "$LOG_FILE"
-API_RESPONSE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "client_mac=$CLIENT_MAC" -d "sn=$SN" -d "ssid=$SSID" -d "time=$TIME" -d "cp_id=$CP_ID" -d "checksum=$CHECKSUM" -d "_=$(date +%s%3N)" "https://guest7.ic.peplink.com/cp/session/resume")
-
-echo "Checking if secondary interaction is required..." | tee -a "$LOG_FILE"
-# If response contains needs_sign_in or similar logic, we perform the follow-up request
-curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "client_mac=$CLIENT_MAC" -d "sn=$SN" -d "ssid=$SSID" -d "time=$TIME" -d "cp_id=$CP_ID" -d "checksum=$CHECKSUM" -d "command=login" "https://guest7.ic.peplink.com/cp/login"
+echo "Performing final grant request: $GRANT_URL" | tee -a "$LOG_FILE"
+# The portal logic uses a HEAD request first to verify session, then a GET to grant
+curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -I -X HEAD -m 15 "$GRANT_URL"
+curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -o /dev/null -m 15 "$GRANT_URL"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
