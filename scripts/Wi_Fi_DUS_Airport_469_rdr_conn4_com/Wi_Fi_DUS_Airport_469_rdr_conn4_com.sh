@@ -42,6 +42,9 @@ curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "${BASE_
 echo "Step 4: Finalizing roaming return..."
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${BASE_URL}/wbs/de/roaming/return/"
 
+echo "Step 5: Ensuring session persistence..."
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${BASE_URL}/ident"
+
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..."
 i=1
 while [ $i -le 10 ]; do
