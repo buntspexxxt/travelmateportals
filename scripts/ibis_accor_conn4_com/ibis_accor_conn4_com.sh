@@ -1,11 +1,9 @@
 #!/bin/sh
 # SCRIPT_VERSION="1.0.0"
-
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_JAR="/tmp/ibis_cookies.txt"
 HTML_OUT="/tmp/portal_html.html"
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-
 trap 'rm -f "${COOKIE_JAR:-}" "${HTML_OUT:-}"' EXIT
 
 echo "Waiting for network readiness..." | tee -a "$LOG_FILE"
@@ -21,7 +19,6 @@ done
 
 echo "Fetching initial portal redirect..." | tee -a "$LOG_FILE"
 EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_JAR" -w "%{url_effective}" -o "$HTML_OUT" -m 15 "http://neverssl.com" | sed "s/\r//g")
-echo "Base URL: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
 
 echo "Extracting scene configuration..." | tee -a "$LOG_FILE"
 SCENE_PLAYER_URI=$(sed -n 's/.*"scenePlayerUri":"\([^"]*\)".*/\1/p' "$HTML_OUT")
@@ -35,8 +32,13 @@ echo "Creating session..." | tee -a "$LOG_FILE"
 SESSION_RESPONSE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 -X POST --data-urlencode "authorization=token=${TOKEN}" "https://accor.conn4.com/wbs/api/v1/create-session/")
 SESSION_ID=$(echo "$SESSION_RESPONSE" | sed -n 's/.*"session":"\([^"]*\)".*/\1/p')
 
-echo "Finalizing registration..." | tee -a "$LOG_FILE"
-curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -m 15 -X POST --data-urlencode "authorization=session=${SESSION_ID}" --data-urlencode "registration_type=terms-only" --data-urlencode "registration[terms]=1" "https://accor.conn4.com/wbs/api/v1/register/free/"
+echo "Finalizing registration (Step 1)..." | tee -a "$LOG_FILE"
+curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 -X POST --data-urlencode "authorization=session=${SESSION_ID}" --data-urlencode "registration_type=terms-only" --data-urlencode "registration[terms]=1" "https://accor.conn4.com/wbs/api/v1/register/free/" > "$HTML_OUT"
+
+echo "Submitting final Terms of Service..." | tee -a "$LOG_FILE"
+# The HTML form targets /service-platform/macauthlogin/v1/registration
+# Submitting with terms=true as required by the form
+curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -m 15 -X POST --data-urlencode "terms=true" "https://accor.conn4.com/service-platform/macauthlogin/v1/registration"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
@@ -50,6 +52,5 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$((i + 1))
 done
-
 echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
