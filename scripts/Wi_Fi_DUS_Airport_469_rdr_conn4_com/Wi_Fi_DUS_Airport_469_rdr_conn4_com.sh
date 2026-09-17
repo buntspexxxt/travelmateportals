@@ -23,11 +23,10 @@ COOKIE_FILE=$(mktemp)
 HTML_FILE=$(mktemp)
 BASE_URL="https://469.rdr.conn4.com"
 
-echo "Step 1: Fetching initial state..."
+echo "Step 1: Initial load..."
 curl -k -m 15 -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" "$BASE_URL/"
 
 echo "Step 2: Extracting scene ID..."
-# Extracting via POSIX compliant sed
 SCENE_ID=$(sed -n 's/.*"id":"\([^"]*\)","module":"html-page-scene-wbs-new".*/\1/p' "$HTML_FILE" | head -n 1)
 echo "Extracted SCENE_ID: $SCENE_ID"
 
@@ -37,12 +36,13 @@ if [ -z "$SCENE_ID" ]; then
 fi
 
 echo "Step 3: Triggering portal flow..."
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "${BASE_URL}/scenes/${SCENE_ID}/" --data-urlencode "action=accept" --data-urlencode "terms=1"
+RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "${BASE_URL}/scenes/${SCENE_ID}/" --data-urlencode "action=accept" --data-urlencode "terms=1")
+echo "HTTP Response for POST: $RESPONSE"
 
-echo "Step 4: Finalizing roaming return..."
+echo "Step 4: Finalizing login..."
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${BASE_URL}/wbs/de/roaming/return/"
 
-echo "Step 5: Ensuring session persistence..."
+echo "Step 5: Establishing connection..."
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${BASE_URL}/ident"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..."
