@@ -5,7 +5,7 @@ COOKIE_FILE=$(mktemp)
 HTML_FILE=$(mktemp)
 trap 'rm -f "$COOKIE_FILE" "$HTML_FILE"' EXIT
 
-echo "Starting Hotsplots/WIFI@DB login process..." | tee -a "$LOG_FILE"
+echo "Starting WIFI@DB / Hotsplots login process..." | tee -a "$LOG_FILE"
 
 echo "Waiting for IP, Gateway, and DNS..." | tee -a "$LOG_FILE"
 i=1
@@ -22,7 +22,7 @@ done
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" -w "%{url_effective}" -m 15 "http://neverssl.com")
+EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" -w "% {url_effective}" -m 15 "http://neverssl.com" | tr -d '\015')
 
 HTML_CONTENT=$(cat "$HTML_FILE")
 CHALLENGE=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form_challenge" value="\([^"]*\)".*/\1/p')
@@ -31,8 +31,7 @@ UAMPORT=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form_uamport" valu
 TOKEN=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form__token" value="\([^"]*\)".*/\1/p')
 
 if [ -n "$CHALLENGE" ]; then
-    echo "Submitting login form..." | tee -a "$LOG_FILE"
-    # Perform POST submission to the same URL context
+    echo "Submitting login form to $EFFECTIVE_URL..." | tee -a "$LOG_FILE"
     curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
         --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
         --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
@@ -40,21 +39,22 @@ if [ -n "$CHALLENGE" ]; then
         --data-urlencode "login_status_form[uamport]=$UAMPORT" \
         --data-urlencode "login_status_form[_token]=$TOKEN" \
         -o "$HTML_FILE" "$EFFECTIVE_URL"
+    echo "Form submission complete." | tee -a "$LOG_FILE"
 else
-    echo "No challenge found, skipping login..." | tee -a "$LOG_FILE"
+    echo "No challenge form found, portal might already be authenticated or in 'success' state." | tee -a "$LOG_FILE"
 fi
 
 echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "% {http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
     fi
-    echo "Attempt $i: Waiting for internet..." | tee -a "$LOG_FILE"
+    echo "Attempt $i: Waiting for internet (HTTP Check: $CHECK_CODE)..." | tee -a "$LOG_FILE"
     sleep 4
     i=$((i + 1))
 done
-echo "ERROR: Portal request completed but no Internet connectivity established." | tee -a "$LOG_FILE"
+echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
