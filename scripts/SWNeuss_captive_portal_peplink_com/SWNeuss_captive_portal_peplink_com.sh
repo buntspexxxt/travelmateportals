@@ -16,21 +16,24 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching initial redirect..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -L -w "%{url_effective}" -o /dev/null -A "$USER_AGENT" "http://neverssl.com")
+echo "Fetching initial splash page..." | tee -a "$LOG_FILE"
+HTML_OUT=$(mktemp)
+EFFECTIVE_URL=$(curl -k -L -w "%{url_effective}" -o "$HTML_OUT" -A "$USER_AGENT" "http://neverssl.com")
 QUERY_STRING=$(echo "$EFFECTIVE_URL" | sed -n 's/.*\?\(.*\)/\1/p')
-API_HOST=$(echo "$EFFECTIVE_URL" | awk -F/ '{print $3}')
 
-echo "Resuming session via Peplink API..." | tee -a "$LOG_FILE"
-RESUME_URL="https://guest7.ic.peplink.com/cp/session/resume?$QUERY_STRING"
-RESPONSE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 "$RESUME_URL")
+echo "Extracting Grant URL and performing login..." | tee -a "$LOG_FILE"
+# The portal provides a link with class 'button' that contains the grant path
+GRANT_URL=$(grep -oE 'https://eu.network-auth.com/splash/[^/]+/grant\?continue_url=[^"]+' "$HTML_OUT" | head -n 1 | sed 's/&amp;/\&/g')
 
-echo "Checking if interaction required..." | tee -a "$LOG_FILE"
-if echo "$RESPONSE" | grep -q '"is_prompt_sign_in":true'; then
-    echo "Manual connect button interaction required." | tee -a "$LOG_FILE"
-    LOGIN_URL="https://guest7.ic.peplink.com/cp/login?$QUERY_STRING&command=login&resume=true"
-    curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -o /dev/null -m 15 "$LOGIN_URL"
+if [ -z "$GRANT_URL" ]; then
+    echo "Could not find grant URL. Analyzing page..." | tee -a "$LOG_FILE"
+    exit 1
 fi
+
+echo "Submitting grant request to: $GRANT_URL" | tee -a "$LOG_FILE"
+# Perform the grant request using HEAD as implied by the page JS
+RESPONSE_CODE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -o /dev/null -w "%{http_code}" "$GRANT_URL")
+echo "HTTP Response Code: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
@@ -38,11 +41,13 @@ while [ $i -le 10 ]; do
     CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
+        rm -f "$HTML_OUT"
         exit 0
     fi
     echo "Attempt $i: Not connected yet (HTTP Check Code: $CHECK_CODE). Waiting..." | tee -a "$LOG_FILE"
     sleep 4
     i=$((i + 1))
 done
+rm -f "$HTML_OUT"
 echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
