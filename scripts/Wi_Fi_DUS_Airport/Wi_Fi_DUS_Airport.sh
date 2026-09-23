@@ -1,5 +1,5 @@
 #!/bin/sh
-# SCRIPT_VERSION="1.0.0"
+# SCRIPT_VERSION="1.1.0"
 LOG_FILE="/tmp/wifi_login.log"
 COOKIE_JAR="$(mktemp)"
 HTML_OUT="$(mktemp)"
@@ -19,77 +19,83 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-# Previous step: Fetch initial portal page and extract token
-echo "Fetching initial portal page to capture token..." | tee -a "$LOG_FILE"
-# The previous script used http://neverssl.com, which might not be the ideal initial redirect. 
-# We'll reuse the logic to ensure we land on the correct portal page.
-# We will use a curl command that follows redirects to get the final HTML.
-EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -w "%{url_effective}" -o "$HTML_OUT" "http://neverssl.com" | tr -d '\015')
+echo "Fetching initial portal page to trigger redirects and capture cookies..." | tee -a "$LOG_FILE"
+# Follow redirects to land on the correct conn4 portal domain and record cookies
+EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -w "%{url_effective}" -o "$HTML_OUT" -m 20 "http://neverssl.com" | tr -d '\015')
 
-# Check if the curl command was successful
-HTTP_STATUS=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o /dev/null -w "%{http_code}" "http://neverssl.com" | tr -d '\015')
+echo "Effective URL: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
 
-if [ "$HTTP_STATUS" -ne 200 ] && [ "$HTTP_STATUS" -ne 302 ]; then
-    echo "ERROR: Failed to fetch initial portal page. HTTP Status: $HTTP_STATUS" | tee -a "$LOG_FILE"
-    exit 1
+# Extract the base domain dynamically from EFFECTIVE_URL
+BASE_DOMAIN=$(echo "$EFFECTIVE_URL" | sed -n 's/\(https*:\/\/[^/]*\).*/\1/p')
+if [ -z "$BASE_DOMAIN" ]; then
+    echo "ERROR: Could not extract base domain from effective URL. Falling back to default." | tee -a "$LOG_FILE"
+    BASE_DOMAIN="https://469.rdr.conn4.com"
+fi
+echo "Base domain: $BASE_DOMAIN" | tee -a "$LOG_FILE"
+
+# Extract the wbsToken from the HTML
+echo "Extracting wbsToken from HTML..." | tee -a "$LOG_FILE"
+# The token is located in: conn4.hotspot.wbsToken = {"token":"..."
+TOKEN=$(sed -n 's/.*conn4\.hotspot\.wbsToken = {"token":"\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1 | tr -d '\015')
+
+if [ -z "$TOKEN" ]; then
+    # Fallback pattern matching
+    TOKEN=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1 | tr -d '\015')
 fi
 
-echo "Initial portal page fetched. Effective URL: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
-
-echo "Extracting WBS Token from HTML..." | tee -a "$LOG_FILE"
-TOKEN=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1 | tr -d '\015')
 if [ -z "$TOKEN" ]; then
     echo "ERROR: Token extraction failed." | tee -a "$LOG_FILE"
     exit 1
 fi
+echo "Extracted Token: $TOKEN" | tee -a "$LOG_FILE"
 
-echo "Attempting to start scene session with token: $TOKEN" | tee -a "$LOG_FILE"
-# Based on the HTML, the portal expects to load a scene via an internal API
+# Extract scene ID
+echo "Extracting scene ID from schedule..." | tee -a "$LOG_FILE"
+SCENE_ID=$(sed -n 's/.*"id":"\([^"]*\)","module":"html-page-scene-wbs-new".*/\1/p' "$HTML_OUT" | head -n 1 | tr -d '\015')
+if [ -z "$SCENE_ID" ]; then
+    # Fallback to general id extraction in events
+    SCENE_ID=$(sed -n 's/.*"id":"\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1 | tr -d '\015')
+fi
+echo "Scene ID: $SCENE_ID" | tee -a "$LOG_FILE"
+
+# Establish session via POST /wbs/api/v1/sessions
+echo "Posting session initialization to backend API..." | tee -a "$LOG_FILE"
 RESPONSE=$(curl -k -X POST -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     -H "Content-Type: application/json" \
     -d "{"token":"$TOKEN"}" \
-    -m 15 -w "
-HTTP_CODE:%{http_code}" "https://469.rdr.conn4.com/wbs/api/v1/sessions" | tr -d '\015')
+    -m 15 -w "\
+HTTP_CODE:%{http_code}" "$BASE_DOMAIN/wbs/api/v1/sessions" | tr -d '\015')
 
-# Extract HTTP code from response
-HTTP_CODE=$(echo "$RESPONSE" | grep -oP 'HTTP_CODE:\K.*')
-RESPONSE_BODY=$(echo "$RESPONSE" | grep -oP '^(.*)HTTP_CODE:' | sed 's/HTTP_CODE:$//' | tr -d '\015')
+HTTP_CODE=$(echo "$RESPONSE" | grep "HTTP_CODE:" | sed 's/HTTP_CODE://')
+echo "Session POST Response Code: $HTTP_CODE" | tee -a "$LOG_FILE"
 
-echo "Response body: $RESPONSE_BODY" | tee -a "$LOG_FILE"
-echo "HTTP Status Code: $HTTP_CODE" | tee -a "$LOG_FILE"
-
-if [ "$HTTP_CODE" -ne 200 ]; then
-    echo "ERROR: Scene session start failed. HTTP Status: $HTTP_CODE" | tee -a "$LOG_FILE"
-    exit 1
+# Next, we must call the scene API /wbs/api/v1/scenes/{id} or verify authorization
+# Conn4 requires getting the scene configuration or requesting the grant URL.
+# Let's request the scene configuration to trigger state change.
+if [ ! -z "$SCENE_ID" ]; then
+    echo "Fetching scene details for $SCENE_ID..." | tee -a "$LOG_FILE"
+    SCENE_RESP=$(curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+        -m 15 -w "\
+HTTP_CODE:%{http_code}" "$BASE_DOMAIN/wbs/api/v1/scenes/$SCENE_ID" | tr -d '\015')
+    SCENE_CODE=$(echo "$SCENE_RESP" | grep "HTTP_CODE:" | sed 's/HTTP_CODE://')
+    echo "Scene GET Response Code: $SCENE_CODE" | tee -a "$LOG_FILE"
 fi
 
-# New step: Handle the second page, which appears to be a confirmation/loading page.
-# The previous script executed the initial POST request. The current HTML indicates
-# that the system is now loading a scene. We need to wait for this scene to load and
-# then verify internet connectivity.
+# Since we are on a 'return' or 'roaming' login flow, we should attempt to hit the grant endpoint if provided,
+# or submit the accept request. Many Conn4/Himalaya systems authorize directly upon session creation and scene load.
+# Let's perform a direct trigger to authorize the MAC address on the portal gateway.
+echo "Triggering portal activation endpoint..." | tee -a "$LOG_FILE"
+ACTIVATE_RESP=$(curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+    -m 15 -w "\
+HTTP_CODE:%{http_code}" "$BASE_DOMAIN/wbs/de/roaming/return/" | tr -d '\015')
+ACTIVATE_CODE=$(echo "$ACTIVATE_RESP" | grep "HTTP_CODE:" | sed 's/HTTP_CODE://')
+echo "Activation Trigger Response Code: $ACTIVATE_CODE" | tee -a "$LOG_FILE"
 
-# The provided HTML is the result *after* the initial login attempt. It contains JavaScript
-# that loads a scene. We've already performed the POST request to initiate the scene loading.
-# The crucial part now is to wait for this loading process to complete and then check for internet.
-# The existing script already has a connectivity check at the end, which we will keep.
-
-# We need to ensure that the previous POST request was successful and the subsequent
-# JavaScript execution on the client side (which we can't directly control in a curl script)
-# eventually leads to an authorized state.
-
-# Given that the previous script likely landed on a page that triggered the provided HTML, 
-# and the goal is to append logic for *this* page, our next action is to trust that
-# the previous POST call was correct and that the system will eventually grant access.
-# The provided HTML itself doesn't contain explicit forms or buttons to submit for this step,
-# it seems to be a state where the portal is waiting for backend authorization after the initial POST.
-
-# Therefore, the logic should proceed directly to the internet connectivity check.
-
-
+# Let's perform the Internet connectivity check
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{{http_code}}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | tr -d '\015')
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204" | tr -d '\015')
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
