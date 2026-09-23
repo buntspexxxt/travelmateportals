@@ -17,28 +17,56 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching portal scene configuration..." | tee -a "$LOG_FILE"
-RESPONSE=$(curl -k -A "$USER_AGENT" -c "$COOKIE_JAR" -w "%{http_code}" -o "$HTML_OUT" -m 15 "https://accor.conn4.com/")
-echo "HTTP Response: $RESPONSE" | tee -a "$LOG_FILE"
+echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
+EFFECTIVE_URL=$(curl -k -A "$USER_AGENT" -L -c "$COOKIE_JAR" -w "%\{url_effective\}" -o "$HTML_OUT" -m 15 "http://neverssl.com")
+echo "Current URL: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
 
-SCENE_PLAYER_URI=$(sed -n 's/.*"scenePlayerUri":"\([^"]*\)".*/\1/p' "$HTML_OUT")
-SCENE_PLAYER_URL="https://accor.conn4.com${SCENE_PLAYER_URI}"
+echo "Extracting form data..." | tee -a "$LOG_FILE"
+# Extract form action and fields dynamically from the HTML
+FORM_ACTION=$(sed -n 's/.*<form.*action="\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1 | sed 's/&amp;/\&/g')
 
-echo "Fetching player token from $SCENE_PLAYER_URL" | tee -a "$LOG_FILE"
-PLAYER_BODY=$(curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 "$SCENE_PLAYER_URL")
-TOKEN=$(echo "$PLAYER_BODY" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+# Helper to extract input values
+extract_val() {
+    sed -n "s/.*name="$1" value="\([^"]*\)".*/\1/p" "$HTML_OUT" | head -n 1 | sed 's/&#x3D;/=/g'
+}
 
-echo "Creating session..." | tee -a "$LOG_FILE"
-SESSION_RESPONSE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 -X POST --data-urlencode "authorization=token=${TOKEN}" "https://accor.conn4.com/wbs/api/v1/create-session/")
-SESSION_ID=$(echo "$SESSION_RESPONSE" | sed -n 's/.*"session":"\([^"]*\)".*/\1/p')
+CBQPC=$(extract_val "cbQpC")
+NASID=$(extract_val "nasid")
+MAC=$(extract_val "mac")
+CHALLENGE=$(extract_val "challenge")
+UAMIP=$(extract_val "uamip")
+UAMPORT=$(extract_val "uamport")
+CALLED=$(extract_val "called")
+USERURL=$(extract_val "userurl")
+SESSIONID=$(extract_val "sessionid")
+USERNAME=$(extract_val "FX_username")
+PASSWORD="easy"
+TEMPLATE=$(extract_val "FX_loginTemplate")
+LOGIN_TYPE="Easy Login"
+DEVICE_ID=$(extract_val "FX_hotspotDeviceId")
 
-echo "Submitting session authorization..." | tee -a "$LOG_FILE"
-curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -m 15 -X POST --data-urlencode "authorization=session=${SESSION_ID}" --data-urlencode "registration_type=terms-only" --data-urlencode "registration[terms]=1" "https://accor.conn4.com/wbs/api/v1/register/free/" | tee -a "$LOG_FILE"
+echo "Submitting login form to $FORM_ACTION..." | tee -a "$LOG_FILE"
+RESPONSE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 -X POST \
+--data-urlencode "cbQpC=$CBQPC" \
+--data-urlencode "nasid=$NASID" \
+--data-urlencode "mac=$MAC" \
+--data-urlencode "challenge=$CHALLENGE" \
+--data-urlencode "uamip=$UAMIP" \
+--data-urlencode "uamport=$UAMPORT" \
+--data-urlencode "called=$CALLED" \
+--data-urlencode "userurl=$USERURL" \
+--data-urlencode "sessionid=$SESSIONID" \
+--data-urlencode "FX_username=$USERNAME" \
+--data-urlencode "FX_password=$PASSWORD" \
+--data-urlencode "FX_loginTemplate=$TEMPLATE" \
+--data-urlencode "FX_loginType=$LOGIN_TYPE" \
+--data-urlencode "FX_hotspotDeviceId=$DEVICE_ID" \
+"$FORM_ACTION")
 
-echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
+echo "Login response received. Verifying connectivity..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
