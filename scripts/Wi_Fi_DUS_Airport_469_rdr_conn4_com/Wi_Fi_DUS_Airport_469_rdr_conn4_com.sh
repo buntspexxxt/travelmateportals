@@ -23,7 +23,7 @@ COOKIE_FILE=$(mktemp)
 HTML_FILE=$(mktemp)
 BASE_URL="https://469.rdr.conn4.com"
 
-echo "Step 1: Initial load..."
+echo "Step 1: Initial load to fetch cookies..."
 curl -k -m 15 -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" "$BASE_URL/"
 
 echo "Step 2: Extracting scene ID..."
@@ -36,13 +36,13 @@ if [ -z "$SCENE_ID" ]; then
 fi
 
 echo "Step 3: Triggering portal flow..."
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "${BASE_URL}/scenes/${SCENE_ID}/" --data-urlencode "action=accept" --data-urlencode "terms=1")
-echo "HTTP Response for POST: $RESPONSE"
+# We need to extract the base64 token if present, though the previous flow used action=accept
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "${BASE_URL}/scenes/${SCENE_ID}/" --data-urlencode "action=accept" --data-urlencode "terms=1"
 
-echo "Step 4: Finalizing login..."
+echo "Step 4: Finalizing login (Roaming Return)..."
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${BASE_URL}/wbs/de/roaming/return/"
 
-echo "Step 5: Establishing connection..."
+echo "Step 5: Verifying state via ident..."
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${BASE_URL}/ident"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..."
