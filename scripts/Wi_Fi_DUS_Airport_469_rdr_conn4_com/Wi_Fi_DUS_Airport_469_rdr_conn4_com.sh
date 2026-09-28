@@ -25,7 +25,7 @@ HTML_FILE=$(mktemp)
 BASE_URL="https://469.rdr.conn4.com"
 
 echo "Step 1: Loading initial portal page..."
-curl -k -m 15 -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" "$BASE_URL/"
+curl -k -v -m 15 -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" "$BASE_URL/"
 
 echo "Step 2: Extracting scene ID..."
 SCENE_ID=$(sed -n 's/.*"id":"\([^"]*\)","module":"html-page-scene-wbs-new".*/\1/p' "$HTML_FILE" | head -n 1)
@@ -37,7 +37,6 @@ if [ -z "$SCENE_ID" ]; then
 fi
 
 echo "Step 3: Triggering portal flow..."
-# Extracting wbsToken from HTML for authentication
 WBS_TOKEN=$(sed -n 's/.*"token":"\([^"]*\)","urls".*/\1/p' "$HTML_FILE" | head -n 1)
 echo "Extracted WBS_TOKEN: $WBS_TOKEN"
 
@@ -47,7 +46,9 @@ echo "HTTP Response for POST: $RESPONSE"
 echo "Step 4: Finalizing login sequence..."
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${BASE_URL}/wbs/de/roaming/return/"
 
-echo "Step 5: Verifying state via ident endpoint..."
+echo "Step 5: Verifying current status..."
+# Based on the provided HTML 'success', the portal confirms authentication.
+# We will perform one final check on the ident endpoint to ensure session is active.
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" "${BASE_URL}/ident"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..."
