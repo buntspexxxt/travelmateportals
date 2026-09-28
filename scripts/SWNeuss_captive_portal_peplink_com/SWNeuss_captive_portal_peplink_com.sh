@@ -16,24 +16,43 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching initial splash page..." | tee -a "$LOG_FILE"
+echo "Starting Peplink Portal Auth..." | tee -a "$LOG_FILE"
 HTML_OUT=$(mktemp)
 EFFECTIVE_URL=$(curl -k -L -w "%{url_effective}" -o "$HTML_OUT" -A "$USER_AGENT" "http://neverssl.com")
-QUERY_STRING=$(echo "$EFFECTIVE_URL" | sed -n 's/.*\?\(.*\)/\1/p')
 
-echo "Extracting Grant URL and performing login..." | tee -a "$LOG_FILE"
-# The portal provides a link with class 'button' that contains the grant path
-GRANT_URL=$(grep -oE 'https://eu.network-auth.com/splash/[^/]+/grant\?continue_url=[^"]+' "$HTML_OUT" | head -n 1 | sed 's/&amp;/\&/g')
+# Extract parameters for API calls
+SN=$(grep -oE 'sn: "[^"]+"' "$HTML_OUT" | cut -d'"' -f2)
+SSID=$(grep -oE 'ssid: "[^"]+"' "$HTML_OUT" | cut -d'"' -f2)
+TIME=$(grep -oE 'time:"[^"]+"' "$HTML_OUT" | cut -d'"' -f2)
+CP_ID=$(grep -oE 'cp_id: "[^"]+"' "$HTML_OUT" | cut -d'"' -f2)
+CHECKSUM=$(grep -oE 'checksum:"[^"]+"' "$HTML_OUT" | cut -d'"' -f2)
+CLIENT_MAC=$(grep -oE 'client_mac: "[^"]+"' "$HTML_OUT" | cut -d'"' -f2)
 
-if [ -z "$GRANT_URL" ]; then
-    echo "Could not find grant URL. Analyzing page..." | tee -a "$LOG_FILE"
-    exit 1
-fi
+# Step 1: Session Resume
+echo "Attempting session resume..." | tee -a "$LOG_FILE"
+RESUME_RESPONSE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -G "https://guest7.ic.peplink.com/cp/session/resume" \
+    --data-urlencode "client_mac=$CLIENT_MAC" \
+    --data-urlencode "sn=$SN" \
+    --data-urlencode "ssid=$SSID" \
+    --data-urlencode "time=$TIME" \
+    --data-urlencode "cp_id=$CP_ID" \
+    --data-urlencode "checksum=$CHECKSUM" \
+    --data-urlencode "_=$(date +%s)")
 
-echo "Submitting grant request to: $GRANT_URL" | tee -a "$LOG_FILE"
-# Perform the grant request using HEAD as implied by the page JS
-RESPONSE_CODE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -o /dev/null -w "%{http_code}" "$GRANT_URL")
-echo "HTTP Response Code: $RESPONSE_CODE" | tee -a "$LOG_FILE"
+echo "Resume Response: $RESUME_RESPONSE" | tee -a "$LOG_FILE"
+
+# Step 2: Login Call
+echo "Executing login command..." | tee -a "$LOG_FILE"
+LOGIN_URL="https://guest7.ic.peplink.com/cp/login"
+curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 -G "$LOGIN_URL" \
+    --data-urlencode "command=login" \
+    --data-urlencode "sn=$SN" \
+    --data-urlencode "ssid=$SSID" \
+    --data-urlencode "cp_id=$CP_ID" \
+    --data-urlencode "checksum=$CHECKSUM" \
+    --data-urlencode "client_mac=$CLIENT_MAC" \
+    --data-urlencode "time=$TIME" \
+    --data-urlencode "resume=true" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
