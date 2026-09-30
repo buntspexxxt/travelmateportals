@@ -30,19 +30,20 @@ UAMPORT=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form_uamport" valu
 TOKEN=$(echo "$HTML_CONTENT" | sed -n 's/.*id="login_status_form__token" value="\([^"]*\)".*/\1/p')
 
 if [ -n "$CHALLENGE" ]; then
-    echo "Submitting login form..." | tee -a "$LOG_FILE"
-    curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
+    echo "Submitting login form to $EFFECTIVE_URL..." | tee -a "$LOG_FILE"
+    RESPONSE=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -m 15 \
         --data-urlencode "login_status_form[button]=Jetzt kostenlos surfen" \
         --data-urlencode "login_status_form[challenge]=$CHALLENGE" \
         --data-urlencode "login_status_form[uamip]=$UAMIP" \
         --data-urlencode "login_status_form[uamport]=$UAMPORT" \
         --data-urlencode "login_status_form[_token]=$TOKEN" \
-        -o "$HTML_FILE" "$EFFECTIVE_URL"
+        -w "%{http_code}" -o "$HTML_FILE" "$EFFECTIVE_URL")
+    echo "HTTP Response from form submission: $RESPONSE" | tee -a "$LOG_FILE"
 else
-    echo "No challenge found, checking if already authorized..." | tee -a "$LOG_FILE"
+    echo "Challenge not found, already logged in?" | tee -a "$LOG_FILE"
 fi
 
-echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
+echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
     CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
@@ -50,9 +51,9 @@ while [ $i -le 10 ]; do
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
     fi
-    echo "Attempt $i: Waiting for internet..." | tee -a "$LOG_FILE"
+    echo "Attempt $i: Not connected yet (HTTP Check Code: $CHECK_CODE). Waiting..." | tee -a "$LOG_FILE"
     sleep 4
     i=$((i + 1))
 done
-echo "ERROR: Portal request completed but no Internet connectivity established." | tee -a "$LOG_FILE"
+echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
