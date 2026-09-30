@@ -16,25 +16,44 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Initial connection to trigger portal redirect..." | tee -a "$LOG_FILE"
-HTML_OUT=$(mktemp)
-# Capture the effective URL of the captive portal redirect
-EFFECTIVE_URL=$(curl -k -L -w "%{url_effective}" -o "$HTML_OUT" -A "$USER_AGENT" "http://neverssl.com")
+echo "Fetching initial portal page to get session variables..." | tee -a "$LOG_FILE"
+HTML_OUT=$(curl -k -A "$USER_AGENT" -L -c "$COOKIE_FILE" "http://neverssl.com")
 
-# The portal uses a Cisco Meraki / Network-Auth structure
-# We need to extract the base URL from the <base> tag or effective URL
-BASE_URL="https://eu.network-auth.com/splash/bs-qtcsd.7.1097/"
+echo "Extracting session parameters from HTML..." | tee -a "$LOG_FILE"
+CLIENT_MAC=$(echo "$HTML_OUT" | sed -n 's/.*client_mac: "\([^"]*\)".*/\1/p' | head -n 1)
+SN=$(echo "$HTML_OUT" | sed -n 's/.*sn: "\([^"]*\)".*/\1/p' | head -n 1)
+SSID=$(echo "$HTML_OUT" | sed -n 's/.*ssid: "\([^"]*\)".*/\1/p' | head -n 1)
+TIME=$(echo "$HTML_OUT" | sed -n 's/.*time:"\([^"]*\)".*/\1/p' | head -n 1)
+CP_ID=$(echo "$HTML_OUT" | sed -n 's/.*cp_id: "\([^"]*\)".*/\1/p' | head -n 1)
+CHECKSUM=$(echo "$HTML_OUT" | sed -n 's/.*checksum:"\([^"]*\)".*/\1/p' | head -n 1)
 
-echo "Requesting grant via HEAD request to obtain Continue-Url header..." | tee -a "$LOG_FILE"
-# Extract continue_url via HEAD request as per JS implementation
-CONTINUE_URL=$(curl -k -I -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -H "X-Requested-With: XMLHttpRequest" "$EFFECTIVE_URL" | grep -i "Continue-Url" | sed "s/\r//g" | cut -d' ' -f2)
+if [ -z "$CLIENT_MAC" ]; then
+    echo "Failed to extract parameters. Exiting." | tee -a "$LOG_FILE"
+    exit 1
+fi
 
-# Construct the grant URL
-GRANT_URL="${BASE_URL}grant?continue_url=${CONTINUE_URL}"
-echo "Granting access: $GRANT_URL" | tee -a "$LOG_FILE"
+echo "Attempting to resume session..." | tee -a "$LOG_FILE"
+RESUME_DATA=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -G \
+  --data-urlencode "client_mac=$CLIENT_MAC" \
+  --data-urlencode "sn=$SN" \
+  --data-urlencode "ssid=$SSID" \
+  --data-urlencode "time=$TIME" \
+  --data-urlencode "cp_id=$CP_ID" \
+  --data-urlencode "checksum=$CHECKSUM" \
+  "https://guest7.ic.peplink.com/cp/session/resume")
 
-# Execute grant
-GRANT_RESPONSE=$(curl -k -L -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$GRANT_URL")
+echo "API Response: $RESUME_DATA" | tee -a "$LOG_FILE"
+
+echo "Triggering login command..." | tee -a "$LOG_FILE"
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -G \
+  --data-urlencode "resume=true" \
+  --data-urlencode "command=login" \
+  --data-urlencode "client_mac=$CLIENT_MAC" \
+  --data-urlencode "sn=$SN" \
+  --data-urlencode "ssid=$SSID" \
+  --data-urlencode "cp_id=$CP_ID" \
+  --data-urlencode "checksum=$CHECKSUM" \
+  "https://guest7.ic.peplink.com/cp/login"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
@@ -42,7 +61,6 @@ while [ $i -le 10 ]; do
     CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
-        rm -f "$HTML_OUT"
         exit 0
     fi
     echo "Attempt $i: Not connected yet (HTTP Check Code: $CHECK_CODE). Waiting..." | tee -a "$LOG_FILE"
@@ -51,5 +69,4 @@ while [ $i -le 10 ]; do
 done
 
 echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
-rm -f "$HTML_OUT"
 exit 1
