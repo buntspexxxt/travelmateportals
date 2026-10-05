@@ -23,10 +23,11 @@ done
 
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-log_message "Fetching landing page to extract form details..."
-HTML_OUT=$(curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -L "http://192.168.1.1/index.php")
+log_message "Fetching initial landing page..."
+# We fetch the index page to establish a session and get the CSRF token
+HTML_OUT=$(curl -k -A "$USER_AGENT" -c "$COOKIE_FILE" -L -m 15 "http://192.168.1.1/index.php")
 
-# Extract hidden fields from the login form
+# Extract hidden fields
 C_VAL=$(echo "$HTML_OUT" | sed -n 's/.*name="c" value="\([^"]*\)".*/\1/p' | head -n 1)
 CURR_PAGE=$(echo "$HTML_OUT" | sed -n 's/.*id="currentPage" type="hidden" name="currentPage" value="\([^"]*\)".*/\1/p' | head -n 1)
 
@@ -35,12 +36,9 @@ if [ -z "$C_VAL" ]; then
     exit 1
 fi
 
-# NOTE: This portal provides a UI for router settings. 
-# The form POSTs to itself. If empty strings are accepted as 'password', we attempt that.
-POST_DATA="c=$C_VAL&currentPage=$CURR_PAGE&wuipassword="
-
-log_message "Submitting login payload..."
-RESULT=$(curl -v -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -d "$POST_DATA" "http://192.168.1.1/index.php")
+log_message "Submitting login payload (empty password for hotspot)..."
+# The portal expects a POST request. We attempt the login with empty credentials.
+RESPONSE=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" --data-urlencode "c=$C_VAL" --data-urlencode "currentPage=$CURR_PAGE" --data-urlencode "wuipassword=" -m 15 "http://192.168.1.1/index.php")
 
 log_message "Verifying real Internet connectivity (polling for up to 40 seconds)..."
 i=1
