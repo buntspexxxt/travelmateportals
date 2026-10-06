@@ -1,6 +1,5 @@
 #!/bin/sh
 # SCRIPT_VERSION="1.0.0"
-
 trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 LOG_FILE="/tmp/captive_portal.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -36,20 +35,18 @@ if [ -z "$SCENE_ID" ]; then
     exit 1
 fi
 
-echo "Step 3: Triggering portal flow..."
-WBS_TOKEN=$(sed -n 's/.*"token":"\([^"]*\)","urls".*/\1/p' "$HTML_FILE" | head -n 1)
+echo "Step 3: Extracting WBS token..."
+WBS_TOKEN=$(sed -n 's/.*"token":"\([^"]*\)","urls".*/\1/p' "$HTML_FILE" | head -n 1 | sed 's/\"/"/g')
 echo "Extracted WBS_TOKEN: $WBS_TOKEN"
 
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "${BASE_URL}/scenes/${SCENE_ID}/" --data-urlencode "action=accept" --data-urlencode "terms=1" --data-urlencode "token=$WBS_TOKEN")
-echo "HTTP Response for POST: $RESPONSE"
+echo "Step 4: Submitting acceptance POST request..."
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$BASE_URL/scenes/$SCENE_ID/" \
+    --data-urlencode "action=accept" \
+    --data-urlencode "terms=1" \
+    --data-urlencode "token=$WBS_TOKEN"
 
-echo "Step 4: Finalizing login sequence..."
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "${BASE_URL}/wbs/de/roaming/return/"
-
-echo "Step 5: Verifying current status..."
-# Based on the provided HTML 'success', the portal confirms authentication.
-# We will perform one final check on the ident endpoint to ensure session is active.
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" "${BASE_URL}/ident"
+echo "Step 5: Finalizing via redirect return path..."
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$BASE_URL/wbs/de/roaming/return/"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..."
 i=1
