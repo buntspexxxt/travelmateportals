@@ -33,7 +33,7 @@ RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 -
   -d '{"termsAndConditionsAccepted":true,"newsletter":false,"privacyPolicyAccepted":true}')
 echo "API Response: $RESPONSE" | tee -a "$LOG_FILE"
 
-echo "Verifying real Internet connectivity..." | tee -a "$LOG_FILE"
+echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
     CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
@@ -41,8 +41,9 @@ while [ $i -le 10 ]; do
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
     fi
-    echo "Attempt $i: Not connected yet (HTTP Code: $CHECK_CODE)." | tee -a "$LOG_FILE"
+    echo "Attempt $i: Not connected yet (HTTP Check Code: $CHECK_CODE). Waiting..." | tee -a "$LOG_FILE"
     sleep 4
     i=$((i + 1))
 done
+echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
