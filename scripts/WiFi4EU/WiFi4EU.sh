@@ -1,6 +1,5 @@
 #!/bin/sh
 # SCRIPT_VERSION="1.0.0"
-
 LOG_FILE="/tmp/portal_login.log"
 echo "Starting WiFi4EU portal login process" > "$LOG_FILE"
 
@@ -25,7 +24,7 @@ USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 echo "Fetching initial portal landing page..." | tee -a "$LOG_FILE"
 curl -k -v -A "$USER_AGENT" -c "$COOKIE_FILE" -L -o "$HTML_FILE" "http://neverssl.com" >> "$LOG_FILE" 2>&1
 
-echo "Extracting the 'Get Online' link from portal HTML..." | tee -a "$LOG_FILE"
+echo "Extracting the 'Get Online' URL..." | tee -a "$LOG_FILE"
 GET_ONLINE_URL=$(sed -n 's/.*href="\([^"]*service-platform\/url\/[0-9]*\)".*/\1/p' "$HTML_FILE" | head -n 1)
 
 if [ -z "$GET_ONLINE_URL" ]; then
@@ -33,14 +32,14 @@ if [ -z "$GET_ONLINE_URL" ]; then
     exit 1
 fi
 
-echo "Navigating to auth URL: $GET_ONLINE_URL" | tee -a "$LOG_FILE"
-# The portal requires navigating through the URL found, likely setting the session cookie for auth
+echo "Submitting 'Get Online' request: $GET_ONLINE_URL" | tee -a "$LOG_FILE"
+# We use -L to follow the redirect to the final connection confirmation
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -o "$HTML_FILE" "$GET_ONLINE_URL" >> "$LOG_FILE" 2>&1
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "% {http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
