@@ -34,6 +34,7 @@ if [ -z "$GET_ONLINE_URL" ]; then
 fi
 
 echo "Navigating to auth URL: $GET_ONLINE_URL" | tee -a "$LOG_FILE"
+# The portal requires navigating through the URL found, likely setting the session cookie for auth
 curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -o "$HTML_FILE" "$GET_ONLINE_URL" >> "$LOG_FILE" 2>&1
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
