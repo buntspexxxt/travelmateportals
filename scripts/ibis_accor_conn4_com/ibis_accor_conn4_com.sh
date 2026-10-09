@@ -28,7 +28,8 @@ SESSION_ID=$(echo "$SCENE_PLAYER_URI" | sed -n 's/\/sscp\/\([^\/]*\)\/.*/\1/p')
 
 echo "Posting connection request to Conn4..." | tee -a "$LOG_FILE"
 CONNECT_URL="${BASE_HOST}/sscp/${SESSION_ID}/api/wbs/connect"
-RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 -X POST \
+# Note: Previous attempt may have failed because the server requires the session ID and correct endpoint structure.
+RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 -X POST "$CONNECT_URL" \
   -H "Content-Type: application/json" \
   -d '{"termsAndConditionsAccepted":true,"newsletter":false,"privacyPolicyAccepted":true}')
 echo "API Response: $RESPONSE" | tee -a "$LOG_FILE"
