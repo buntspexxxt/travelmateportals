@@ -16,49 +16,25 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching initial portal page to get session variables..." | tee -a "$LOG_FILE"
-HTML_OUT=$(curl -k -A "$USER_AGENT" -L -c "$COOKIE_FILE" "http://neverssl.com")
+echo "Fetching initial redirect to identify parameters..." | tee -a "$LOG_FILE"
+# Extract parameters directly from the redirect landing page
+EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -w "%\{url_effective\}" -o /dev/null "http://neverssl.com")
+QUERY_STRING=$(echo "$EFFECTIVE_URL" | sed -n 's/.*\?\(.*\)/\1/p')
 
-echo "Extracting session parameters from HTML..." | tee -a "$LOG_FILE"
-CLIENT_MAC=$(echo "$HTML_OUT" | sed -n 's/.*client_mac: "\([^"]*\)".*/\1/p' | head -n 1)
-SN=$(echo "$HTML_OUT" | sed -n 's/.*sn: "\([^"]*\)".*/\1/p' | head -n 1)
-SSID=$(echo "$HTML_OUT" | sed -n 's/.*ssid: "\([^"]*\)".*/\1/p' | head -n 1)
-TIME=$(echo "$HTML_OUT" | sed -n 's/.*time:"\([^"]*\)".*/\1/p' | head -n 1)
-CP_ID=$(echo "$HTML_OUT" | sed -n 's/.*cp_id: "\([^"]*\)".*/\1/p' | head -n 1)
-CHECKSUM=$(echo "$HTML_OUT" | sed -n 's/.*checksum:"\([^"]*\)".*/\1/p' | head -n 1)
+echo "Extracted query string: $QUERY_STRING" | tee -a "$LOG_FILE"
 
-if [ -z "$CLIENT_MAC" ]; then
-    echo "Failed to extract parameters. Exiting." | tee -a "$LOG_FILE"
-    exit 1
-fi
+echo "Performing session resume call..." | tee -a "$LOG_FILE"
+RESUME_RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -G --data-urlencode "$_=$(date +%s000)" --data-urlencode "client_mac=$(echo "$QUERY_STRING" | sed -n 's/.*client_mac=\([^&]*\).*/\1/p')" --data-urlencode "sn=$(echo "$QUERY_STRING" | sed -n 's/.*sn=\([^&]*\).*/\1/p')" --data-urlencode "ssid=$(echo "$QUERY_STRING" | sed -n 's/.*ssid=\([^&]*\).*/\1/p')" --data-urlencode "time=$(echo "$QUERY_STRING" | sed -n 's/.*time=\([^&]*\).*/\1/p')" --data-urlencode "cp_id=$(echo "$QUERY_STRING" | sed -n 's/.*cp_id=\([^&]*\).*/\1/p')" --data-urlencode "checksum=$(echo "$QUERY_STRING" | sed -n 's/.*checksum=\([^&]*\).*/\1/p')" "https://guest7.ic.peplink.com/cp/session/resume")
 
-echo "Attempting to resume session..." | tee -a "$LOG_FILE"
-RESUME_DATA=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -G \
-  --data-urlencode "client_mac=$CLIENT_MAC" \
-  --data-urlencode "sn=$SN" \
-  --data-urlencode "ssid=$SSID" \
-  --data-urlencode "time=$TIME" \
-  --data-urlencode "cp_id=$CP_ID" \
-  --data-urlencode "checksum=$CHECKSUM" \
-  "https://guest7.ic.peplink.com/cp/session/resume")
+echo "API Response: $RESUME_RESPONSE" | tee -a "$LOG_FILE"
 
-echo "API Response: $RESUME_DATA" | tee -a "$LOG_FILE"
-
-echo "Triggering login command..." | tee -a "$LOG_FILE"
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -G \
-  --data-urlencode "resume=true" \
-  --data-urlencode "command=login" \
-  --data-urlencode "client_mac=$CLIENT_MAC" \
-  --data-urlencode "sn=$SN" \
-  --data-urlencode "ssid=$SSID" \
-  --data-urlencode "cp_id=$CP_ID" \
-  --data-urlencode "checksum=$CHECKSUM" \
-  "https://guest7.ic.peplink.com/cp/login"
+echo "Submitting final login request..." | tee -a "$LOG_FILE"
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -G --data-urlencode "resume=true" --data-urlencode "command=login" --data-urlencode "sn=$(echo "$QUERY_STRING" | sed -n 's/.*sn=\([^&]*\).*/\1/p')" --data-urlencode "ssid=$(echo "$QUERY_STRING" | sed -n 's/.*ssid=\([^&]*\).*/\1/p')" --data-urlencode "client_mac=$(echo "$QUERY_STRING" | sed -n 's/.*client_mac=\([^&]*\).*/\1/p')" --data-urlencode "cp_id=$(echo "$QUERY_STRING" | sed -n 's/.*cp_id=\([^&]*\).*/\1/p')" --data-urlencode "checksum=$(echo "$QUERY_STRING" | sed -n 's/.*checksum=\([^&]*\).*/\1/p')" "https://guest7.ic.peplink.com/cp/login"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
@@ -68,5 +44,5 @@ while [ $i -le 10 ]; do
     i=$((i + 1))
 done
 
-echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
+echo "ERROR: Portal request completed but no Internet connectivity established." | tee -a "$LOG_FILE"
 exit 1
