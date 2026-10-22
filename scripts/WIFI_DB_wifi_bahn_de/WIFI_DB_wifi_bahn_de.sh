@@ -21,20 +21,20 @@ done
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 DOMAIN="wifi.bahn.de"
 
-echo "Attempting CNA API logon (JSON)..." | tee -a "$LOG_FILE"
-# Added --ciphers DEFAULT@SECLEVEL=0 to handle 'unsafe legacy renegotiation' error
-curl -k -v -A "$UA" -m 15 --ciphers DEFAULT@SECLEVEL=0 -H "Content-Type: application/json" -H "X-Requested-With: XMLHttpRequest" -H "X-Csrf-Token: csrf" -d "{}" "https://$DOMAIN/cna/logon" >>"$LOG_FILE" 2>&1
+echo "Attempting CNA API logon..." | tee -a "$LOG_FILE"
+CNA_RESPONSE=$(curl -k -v -A "$UA" -m 15 --ciphers DEFAULT@SECLEVEL=0 -H "Content-Type: application/json" -H "X-Requested-With: XMLHttpRequest" -H "X-Csrf-Token: csrf" -d "{}" "https://$DOMAIN/cna/logon")
+echo "CNA Response: $CNA_RESPONSE" | tee -a "$LOG_FILE"
 
-echo "Attempting legacy portal authentication..." | tee -a "$LOG_FILE"
-curl -k -v -A "$UA" -m 15 --ciphers DEFAULT@SECLEVEL=0 -c "$COOKIE_FILE" -o /dev/null "https://$DOMAIN/en/" >>"$LOG_FILE" 2>&1
-
-TOKEN=$(grep -i 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}' | tr -d '\015')
-if [ -n "$TOKEN" ]; then
-    echo "Found token, submitting POST..." | tee -a "$LOG_FILE"
-    curl -k -v -A "$UA" -m 15 --ciphers DEFAULT@SECLEVEL=0 -b "$COOKIE_FILE" -H "Cookie: csrf=$TOKEN" --data-urlencode "login=true" --data-urlencode "CSRFToken=$TOKEN" "https://$DOMAIN/en/" >>"$LOG_FILE" 2>&1
+# Check if CNA response indicates success directly
+if echo "$CNA_RESPONSE" | grep -q "success"; then
+    echo "CNA logon successful." | tee -a "$LOG_FILE"
 else
-    echo "Error: Could not extract CSRF token." | tee -a "$LOG_FILE"
-    exit 1
+    echo "CNA logon did not return success, trying legacy flow..." | tee -a "$LOG_FILE"
+    curl -k -v -A "$UA" -m 15 --ciphers DEFAULT@SECLEVEL=0 -c "$COOKIE_FILE" -o /dev/null "https://$DOMAIN/en/" >>"$LOG_FILE" 2>&1
+    TOKEN=$(grep -i 'csrf' "$COOKIE_FILE" | tail -n 1 | awk '{print $7}' | tr -d '\015')
+    if [ -n "$TOKEN" ]; then
+        curl -k -v -A "$UA" -m 15 --ciphers DEFAULT@SECLEVEL=0 -b "$COOKIE_FILE" -H "Cookie: csrf=$TOKEN" --data-urlencode "login=true" --data-urlencode "CSRFToken=$TOKEN" "https://$DOMAIN/en/" >>"$LOG_FILE" 2>&1
+    fi
 fi
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
@@ -49,5 +49,5 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$((i + 1))
 done
-echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
+echo "ERROR: Portal request completed but no Internet connectivity established." | tee -a "$LOG_FILE"
 exit 1
