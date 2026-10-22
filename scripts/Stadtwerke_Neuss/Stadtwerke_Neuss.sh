@@ -20,24 +20,27 @@ while [ $i -le 20 ]; do
 done
 
 echo "Fetching initial redirect URL to extract parameters..." | tee -a "$LOG_FILE"
-# Use -I to get headers, extract Location header safely
-REDIRECT_URL=$(curl -k -I -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -s "http://neverssl.com" | grep -i "Location:" | sed 's/Location: //I' | tr -d '\\015')
+EFFECTIVE_URL=$(curl -k -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -w "%{url_effective}" -o "$HTML_OUT" -m 15 "http://neverssl.com" | tr -d '\015')
 
-echo "Initial Redirect: $REDIRECT_URL" | tee -a "$LOG_FILE"
+echo "Initial Redirect: $EFFECTIVE_URL" | tee -a "$LOG_FILE"
 
-CHALLENGE=$(echo "$REDIRECT_URL" | sed -n 's/.*challenge=\([^&]*\).*/\1/p')
-UAMIP=$(echo "$REDIRECT_URL" | sed -n 's/.*uamip=\([^&]*\).*/\1/p')
-UAMPORT=$(echo "$REDIRECT_URL" | sed -n 's/.*uamport=\([^&]*\).*/\1/p')
-NASID=$(echo "$REDIRECT_URL" | sed -n 's/.*nasid=\([^&]*\).*/\1/p')
-USERURL=$(echo "$REDIRECT_URL" | sed -n 's/.*userurl=\([^&]*\).*/\1/p')
+CHALLENGE=$(echo "$EFFECTIVE_URL" | sed -n 's/.*challenge=\([^&]*\).*/\1/p')
+UAMIP=$(echo "$EFFECTIVE_URL" | sed -n 's/.*uamip=\([^&]*\).*/\1/p')
+UAMPORT=$(echo "$EFFECTIVE_URL" | sed -n 's/.*uamport=\([^&]*\).*/\1/p')
+NASID=$(echo "$EFFECTIVE_URL" | sed -n 's/.*nasid=\([^&]*\).*/\1/p')
+USERURL=$(echo "$EFFECTIVE_URL" | sed -n 's/.*userurl=\([^&]*\).*/\1/p' | sed 's/%3A/:/g;s/%2F/\//g')
 
 if [ -z "$CHALLENGE" ]; then
-    echo "ERROR: Could not extract dynamic challenge token." | tee -a "$LOG_FILE"
+    echo "ERROR: Could not extract dynamic challenge token. Checking HTML..." | tee -a "$LOG_FILE"
+    CHALLENGE=$(sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p' "$HTML_OUT")
+fi
+
+if [ -z "$CHALLENGE" ]; then
+    echo "ERROR: Could not extract challenge. Exiting." | tee -a "$LOG_FILE"
     exit 1
 fi
 
 echo "Submitting login POST request..." | tee -a "$LOG_FILE"
-# Submitting the form with AGB acceptance as indicated by the HTML structure
 RESPONSE=$(curl -k -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
     -c "$COOKIE_FILE" -b "$COOKIE_FILE" \
     --data-urlencode "haveTerms=1" \
