@@ -35,8 +35,8 @@ if [ -z "$SCENE_ID" ]; then
     exit 1
 fi
 
-echo "Step 3: Extracting WBS token..."
-WBS_TOKEN=$(sed -n 's/.*"token":"\([^"]*\)","urls".*/\1/p' "$HTML_FILE" | head -n 1 | sed 's/\"/"/g')
+echo "Step 3: Extracting WBS token from HTML..."
+WBS_TOKEN=$(sed -n 's/.*"token":{"token":"\([^"]*\)","urls".*/\1/p' "$HTML_FILE" | head -n 1)
 echo "Extracted WBS_TOKEN: $WBS_TOKEN"
 
 echo "Step 4: Submitting acceptance POST request..."
