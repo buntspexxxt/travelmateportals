@@ -1,11 +1,13 @@
 #!/bin/sh
 # SCRIPT_VERSION="1.0.0"
-trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
+
 LOG_FILE="/tmp/captive_portal.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
+trap 'rm -f "${COOKIE_FILE}" "${HTML_FILE}"' EXIT
 
 echo "Starting Conn4 multi-step automation..."
 
+# Wait loop for network readiness
 echo "Waiting for IP, Gateway, and DNS..."
 i=1
 while [ $i -le 20 ]; do
@@ -23,30 +25,32 @@ COOKIE_FILE=$(mktemp)
 HTML_FILE=$(mktemp)
 BASE_URL="https://469.rdr.conn4.com"
 
-echo "Step 1: Loading initial portal page..."
+echo "Step 1: Fetching initial portal and cookies..."
 curl -k -v -m 15 -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" "$BASE_URL/"
 
-echo "Step 2: Extracting scene ID..."
+echo "Step 2: Parsing WBS token and Scene ID from HTML..."
+# We use sed to extract values from the JSON structure inside the JS script tag
 SCENE_ID=$(sed -n 's/.*"id":"\([^"]*\)","module":"html-page-scene-wbs-new".*/\1/p' "$HTML_FILE" | head -n 1)
-echo "Extracted SCENE_ID: $SCENE_ID"
+WBS_JSON=$(sed -n 's/.*conn4.hotspot.wbsToken = \({"token":.*"urls":{.*}}\);.*/\1/p' "$HTML_FILE" | head -n 1)
 
-if [ -z "$SCENE_ID" ]; then
-    echo "Error: Failed to extract SCENE_ID. Exiting."
+if [ -z "$SCENE_ID" ] || [ -z "$WBS_JSON" ]; then
+    echo "Error: Failed to extract mandatory parameters. Exiting."
     exit 1
 fi
 
-echo "Step 3: Extracting WBS token from HTML..."
-WBS_TOKEN=$(sed -n 's/.*"token":{"token":"\([^"]*\)","urls".*/\1/p' "$HTML_FILE" | head -n 1)
-echo "Extracted WBS_TOKEN: $WBS_TOKEN"
+TOKEN=$(echo "$WBS_JSON" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+echo "Extracted SCENE_ID: $SCENE_ID"
 
-echo "Step 4: Submitting acceptance POST request..."
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$BASE_URL/scenes/$SCENE_ID/" \
+echo "Step 3: Submitting login/acceptance..."
+# The portal requires a POST to the scene URL using the extracted token
+curl -k -v -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$BASE_URL/scenes/$SCENE_ID/" \
     --data-urlencode "action=accept" \
     --data-urlencode "terms=1" \
-    --data-urlencode "token=$WBS_TOKEN"
+    --data-urlencode "token=$TOKEN"
 
-echo "Step 5: Finalizing via redirect return path..."
-curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$BASE_URL/wbs/de/roaming/return/"
+echo "Step 4: Requesting session transition..."
+# Finalizing the session by hitting the return path found in WISP metadata
+curl -k -v -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$BASE_URL/wbs/de/roaming/return/"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..."
 i=1
@@ -60,5 +64,6 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$((i + 1))
 done
+
 echo "ERROR: Portal request completed but no Internet connectivity established."
 exit 1
