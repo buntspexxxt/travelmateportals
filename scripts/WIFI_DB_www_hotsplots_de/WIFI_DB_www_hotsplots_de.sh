@@ -3,7 +3,7 @@
 
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
-trap 'rm -f "$COOKIE_FILE"' EXIT
+trap 'rm -f "$COOKIE_FILE" "$HTML_OUT"' EXIT
 
 echo "Starting Hotsplots portal login process..." | tee -a "$LOG_FILE"
 
@@ -20,7 +20,6 @@ while [ $i -le 20 ]; do
 done
 
 HTML_OUT=$(mktemp)
-trap 'rm -f "$HTML_OUT" "$COOKIE_FILE"' EXIT
 
 echo "Fetching initial redirect to gather parameters..." | tee -a "$LOG_FILE"
 EFFECTIVE_URL=$(curl -k -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -c "$COOKIE_FILE" -o "$HTML_OUT" -w "%{url_effective}" -m 15 "http://neverssl.com")
@@ -33,24 +32,22 @@ NASID=$(sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | tr -d '
 USERURL=$(sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | tr -d '\015')
 
 if [ -z "$CHALLENGE" ]; then
-    echo "Error: Could not extract challenge token." | tee -a "$LOG_FILE"
-    exit 1
+    echo "Warning: Could not extract challenge. Checking if already authorized..." | tee -a "$LOG_FILE"
+else
+    echo "Submitting acceptance form for terms of use..." | tee -a "$LOG_FILE"
+    RESPONSE_CODE=$(curl -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST \
+    --data-urlencode "haveTerms=1" \
+    --data-urlencode "termsOK=on" \
+    --data-urlencode "challenge=$CHALLENGE" \
+    --data-urlencode "uamip=$UAMIP" \
+    --data-urlencode "uamport=$UAMPORT" \
+    --data-urlencode "userurl=$USERURL" \
+    --data-urlencode "myLogin=agb" \
+    --data-urlencode "nasid=$NASID" \
+    --data-urlencode "custom=1" \
+    -w "%{http_code}" -o /dev/null -m 15 "https://www.hotsplots.de/auth/login.php")
+    echo "Portal submission HTTP Response: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 fi
-
-echo "Submitting acceptance form for terms of use..." | tee -a "$LOG_FILE"
-RESPONSE_CODE=$(curl -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST \
---data-urlencode "haveTerms=1" \
---data-urlencode "termsOK=on" \
---data-urlencode "challenge=$CHALLENGE" \
---data-urlencode "uamip=$UAMIP" \
---data-urlencode "uamport=$UAMPORT" \
---data-urlencode "userurl=$USERURL" \
---data-urlencode "myLogin=agb" \
---data-urlencode "nasid=$NASID" \
---data-urlencode "custom=1" \
--w "%{http_code}" -o /dev/null -m 15 "https://www.hotsplots.de/auth/login.php")
-
-echo "Portal submission HTTP Response: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
@@ -64,6 +61,5 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$((i + 1))
 done
-
 echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
