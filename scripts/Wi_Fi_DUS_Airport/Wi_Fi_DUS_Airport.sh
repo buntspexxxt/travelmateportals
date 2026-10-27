@@ -19,7 +19,7 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching portal index to capture session cookies..." | tee -a "$LOG_FILE"
+echo "Fetching portal index..." | tee -a "$LOG_FILE"
 EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -w "%{url_effective}" -o "$HTML_OUT" -m 20 "http://neverssl.com" | tr -d '\015')
 
 BASE_DOMAIN=$(echo "$EFFECTIVE_URL" | sed -n 's/\(https*:\/\/[^/]*\).*/\1/p')
