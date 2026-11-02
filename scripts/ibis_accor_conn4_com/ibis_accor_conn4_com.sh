@@ -19,7 +19,7 @@ while [ $i -le 20 ]; do
 done
 
 echo "Fetching initial redirect..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -v -A "$USER_AGENT" -L -c "$COOKIE_JAR" -w "%\{url_effective\}" -o "$HTML_OUT" -m 15 "http://neverssl.com")
+EFFECTIVE_URL=$(curl -k -v -A "$USER_AGENT" -L -c "$COOKIE_JAR" -w "%{url_effective}" -o "$HTML_OUT" -m 15 "http://neverssl.com")
 BASE_HOST=$(echo "$EFFECTIVE_URL" | sed -n 's/\(https*:\/\/[^\/]*\).*/\1/p')
 
 SCENE_PLAYER_URI=$(grep -o '"scenePlayerUri":"[^"]*"' "$HTML_OUT" | sed -n 's/.*"scenePlayerUri":"\([^"]*\)".*/\1/p' | sed 's/\\//g')
@@ -28,7 +28,6 @@ SESSION_ID=$(echo "$SCENE_PLAYER_URI" | sed -n 's/\/sscp\/\([^\/]*\)\/.*/\1/p')
 
 echo "Posting connection request to Conn4..." | tee -a "$LOG_FILE"
 CONNECT_URL="${BASE_HOST}/sscp/${SESSION_ID}/api/wbs/connect"
-# Note: Previous attempt may have failed because the server requires the session ID and correct endpoint structure.
 RESPONSE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 -X POST "$CONNECT_URL" \
   -H "Content-Type: application/json" \
   -d '{"termsAndConditionsAccepted":true,"newsletter":false,"privacyPolicyAccepted":true}')
@@ -37,7 +36,7 @@ echo "API Response: $RESPONSE" | tee -a "$LOG_FILE"
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
