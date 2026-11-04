@@ -52,18 +52,9 @@ INITIAL_URL="http://detectportal.firefox.com/success.txt"
 # -w: Write out the effective URL to a variable
 # -o: Save the output to a file
 
-# The previous script successfully followed redirects to guest7.ic.peplink.com
-# and downloaded the 'success.txt.html' file. We will reuse the EFFECTIVE_URL
-# and the downloaded HTML from the previous step.
-
-# Extracting the cookies from the previous step to use them in subsequent requests.
-# Assuming the previous script saved cookies to $COOKIE_FILE. If not, this might fail.
-
 echo "Following redirects to the captive portal page..." | tee -a "$LOG_FILE"
 
-# We need to re-fetch the initial page to get the correct effective URL and status code
-# as the previous script's output logs are not directly available here.
-
+# Re-fetch the initial page to get the correct effective URL and status code
 EFFECTIVE_URL=$(curl -v -L -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -m 15 -w "%{{url_effective}}" -o "$PORTAL_TMP_DIR/portal/initial_page.html" "$INITIAL_URL" 2>> "$LOG_FILE")
 
 HTTP_STATUS=$(curl -v -L -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -m 15 -o /dev/null -w "%{{http_code}}" "$INITIAL_URL" 2>> "$LOG_FILE")
@@ -76,24 +67,20 @@ if [ -z "$EFFECTIVE_URL" ] || [ "$HTTP_STATUS" -ne 200 ]; then
     exit 1
 fi
 
-# --- Step 2: Analyze the new HTML and POST if necessary --- 
-# The provided HTML ('success.txt.html' and 'index.html') indicates a device error (DEV_OFFLINE).
+# --- Step 2: Analyze the new HTML and POST if necessary ---
+# The provided HTML ('success.txt.html' and 'index.html') from guest7.ic.peplink.com
+# indicates a device error (Code: 9004 DEV_OFFLINE). This means the system
+# cannot communicate with the device, not that it needs credentials.
 # There is no login form on this page. The 'Start Over' button redirects to 'https://www.peplink.com/'.
-# This indicates the captive portal itself is likely not functioning correctly, or the device is offline.
+# Therefore, no standard login POST request can be made from this page.
 
-# Since the HTML shows an error message and not a login form, no POST request can be made to authenticate.
-# The previous script also encountered this error. The system is reporting a device communication issue.
-
-# The cookie file contains a JSESSIONID for guest.ic.peplink.com, but the effective URL is guest7.ic.peplink.com.
-# This suggests the session might be on a different domain or subdomain, but without a form, we can't proceed.
-
-# The portal is reporting an error (Code: 9004 DEV_OFFLINE). This means a standard login is not possible.
-# The system cannot communicate with the device, not that it needs credentials.
-# Therefore, the confidence is 'red' as the portal is in an error state.
+# The portal is reporting an error (Code: 9004 DEV_OFFLINE).
+# This indicates a backend issue with the Wi-Fi device itself, making standard authentication impossible.
+# The confidence is 'red' as the portal is in an error state and cannot be bypassed through standard means.
 
 # No further POST requests are possible from this page as there's no input form.
 
-# --- Step 3: Final Internet Connectivity Check --- 
+# --- Step 3: Final Internet Connectivity Check ---
 # This is a mandatory step to verify if the internet connection has been established after the portal interaction.
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
