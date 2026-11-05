@@ -39,7 +39,7 @@ mkdir -p "$PORTAL_TMP_DIR/portal"
 COOKIE_FILE="$PORTAL_TMP_DIR/cookies.txt"
 echo "Created temporary cookie file: $COOKIE_FILE" >> "$LOG_FILE"
 
-# --- Step 1: Initial Redirect --- 
+# --- Step 1: Initial Redirect ---
 echo "Sending initial request to detectportal.firefox.com..." | tee -a "$LOG_FILE"
 
 INITIAL_URL="http://detectportal.firefox.com/success.txt"
