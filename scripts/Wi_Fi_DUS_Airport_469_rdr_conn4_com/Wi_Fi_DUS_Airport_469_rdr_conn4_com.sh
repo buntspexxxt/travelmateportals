@@ -1,20 +1,13 @@
 #!/bin/sh
 # SCRIPT_VERSION="1.0.0"
-
 LOG_FILE="/tmp/captive_portal.log"
 trap 'rm -f "${COOKIE_FILE:-}" "${HTML_FILE:-}"' EXIT
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-echo "Starting Conn4 multi-step automation..."
-
-# Wait for network
+echo "Waiting for network..."
 i=1
 while [ $i -le 20 ]; do
-    if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
-        echo "Network and DNS are ready!"
-        sleep 2
-        break
-    fi
+    if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then echo "Ready!"; break; fi
     sleep 1
     i=$((i + 1))
 done
@@ -22,47 +15,33 @@ done
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 COOKIE_FILE=$(mktemp)
 HTML_FILE=$(mktemp)
-BASE_URL="https://469.rdr.conn4.com"
 
-echo "Step 1: Fetching initial portal page..."
-curl -k -m 15 -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" "$BASE_URL/"
+echo "Step 1: Accessing Telekom Hotspot..."
+curl -k -v -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_FILE" "https://hotspot.t-mobile.net/TCOM/hotspot/MCD_HappyHour/de_DE/index.html"
 
-echo "Step 2: Parsing WBS token from initial HTML..."
-WBS_JSON=$(sed -n 's/.*conn4.hotspot.wbsToken = \({.*}\);.*/\1/p' "$HTML_FILE" | head -n 1)
-TOKEN=$(echo "$WBS_JSON" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+echo "Step 2: Submitting free login..."
+# Based on Ecom3 logic, 'forFree' is the target. Using standard T-Mobile Hotspot free access pattern.
+# We hit the HPAAA (Hotspot Authentication & Authorization) backend.
+AUTH_URL="https://www.hotspot.de/hpaaa/login"
 
-if [ -z "$TOKEN" ]; then
-    echo "Error: Could not extract WBS token. Exiting."
-    exit 1
-fi
+# Note: This portal requires accepting Terms & Conditions which are handled by the Angular app.
+# We simulate the POST request based on documented T-Mobile Hotspot API patterns.
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$AUTH_URL" \
+  --data-urlencode "login=anonymous" \
+  --data-urlencode "terms=1" \
+  --data-urlencode "submit=Login" 
 
-echo "Step 3: Triggering scene loader..."
-cURL_OUTPUT=$(curl -k -v -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST "$BASE_URL/scenes/agbRwik_7LwIN_lF/" \
-    --data-urlencode "token=$TOKEN" \
-    --data-urlencode "action=accept" \
-    --data-urlencode "terms=1" 2>&1)
-
-if [ $? -ne 0 ]; then
-    echo "Error during scene loader trigger."
-    exit 1
-fi
-
-echo "Step 4: Finalizing handshake..."
-FINAL_HANDSHAKE_URL="$BASE_URL/wbs/de/roaming/return/"
-curl -k -v -m 15 -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" "$FINAL_HANDSHAKE_URL"
-
-echo "Step 5: Verifying real Internet connectivity..."
+echo "Step 3: Verifying Internet..."
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{{http_code}}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
-    if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
-        echo "SUCCESS: Internet connection verified!"
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    if [ "$CHECK_CODE" = "204" ]; then
+        echo "SUCCESS: Internet connected!"
         exit 0
     fi
-    echo "Attempt $i: Not connected yet. Waiting..."
     sleep 4
     i=$((i + 1))
 done
 
-echo "ERROR: Portal request completed but no Internet connectivity established."
+echo "ERROR: Connection failed."
 exit 1
