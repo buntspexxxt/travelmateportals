@@ -67,7 +67,7 @@ if [ -z "$EFFECTIVE_URL" ] || [ "$HTTP_STATUS" -ne 200 ]; then
     exit 1
 fi
 
-# --- Step 2: Analyze the new HTML and POST if necessary ---
+# --- Step 2: Analyze the HTML from guest7.ic.peplink.com --- 
 # The provided HTML ('success.txt.html' and 'index.html') from guest7.ic.peplink.com
 # indicates a device error (Code: 9004 DEV_OFFLINE). This means the system
 # cannot communicate with the device, not that it needs credentials.
