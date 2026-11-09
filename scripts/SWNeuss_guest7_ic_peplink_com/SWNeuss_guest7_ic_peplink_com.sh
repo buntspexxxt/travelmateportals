@@ -67,7 +67,7 @@ if [ -z "$EFFECTIVE_URL" ] || [ "$HTTP_STATUS" -ne 200 ]; then
     exit 1
 fi
 
-# --- Step 2: Analyze the HTML from guest7.ic.peplink.com --- 
+# --- Step 2: Analyze the HTML from guest7.ic.peplink.com ---
 # The provided HTML ('success.txt.html' and 'index.html') from guest7.ic.peplink.com
 # indicates a device error (Code: 9004 DEV_OFFLINE). This means the system
 # cannot communicate with the device, not that it needs credentials.
@@ -80,7 +80,17 @@ fi
 
 # No further POST requests are possible from this page as there's no input form.
 
-# --- Step 3: Final Internet Connectivity Check ---
+# --- Step 3: Handle the subsequent error page from guest7.ic.peplink.com ---
+# The previous script successfully navigated to the first page, but it resulted in an error.
+# The provided HTML ('success.txt.html' and 'index.html') shows a 'DEV_OFFLINE' error.
+# This indicates a device issue, not a login requirement.
+# There is no form to submit on this page. The only action is a button to 'Start Over' which redirects to 'https://www.peplink.com/'.
+# Since we cannot bypass the device error with a standard login, the script should exit.
+
+# The existing script already correctly identifies this as an error state and proceeds to the connectivity check.
+# No additional curl commands are needed to interact with this error page itself for login purposes.
+
+# --- Step 4: Final Internet Connectivity Check ---
 # This is a mandatory step to verify if the internet connection has been established after the portal interaction.
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
