@@ -3,7 +3,7 @@
 LOG_FILE="/tmp/portal_login.log"
 echo "Starting REWE/Conn4 portal login..." | tee -a "$LOG_FILE"
 
-echo "Waiting for network..." | tee -a "$LOG_FILE"
+trap 'rm -f "$COOKIE_FILE" "$HTML_OUT" "$TMP_JSON"' EXIT
 i=1
 while [ $i -le 20 ]; do
     if ip route | grep -q default && nslookup neverssl.com >/dev/null 2>&1; then
@@ -16,35 +16,36 @@ done
 
 COOKIE_FILE=$(mktemp)
 HTML_OUT=$(mktemp)
-trap 'rm -f "$COOKIE_FILE" "$HTML_OUT"' EXIT
+TMP_JSON=$(mktemp)
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 echo "Fetching portal landing..." | tee -a "$LOG_FILE"
 curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_OUT" -m 15 "http://neverssl.com" > /dev/null 2>&1
 
-TOKEN=$(sed -n 's/.*"token":"\([a-zA-Z0-9+/=]\{50,\}\)".*/\1/p' "$HTML_OUT" | head -n 1 | sed 's/\r//g')
+# Dynamically extract the wbsToken object from the JS variable in HTML
+# The structure is conn4.hotspot.wbsToken = {"token":"..."...}
+TOKEN_JSON=$(sed -n 's/.*conn4.hotspot.wbsToken = \({.*}\);.*/\1/p' "$HTML_OUT" | sed 's/\r//g')
 
-if [ -z "$TOKEN" ]; then
-    echo "Error: Could not extract wbsToken." | tee -a "$LOG_FILE"
+if [ -z "$TOKEN_JSON" ]; then
+    echo "Error: Could not extract wbsToken JSON." | tee -a "$LOG_FILE"
     exit 1
 fi
+echo "$TOKEN_JSON" > "$TMP_JSON"
+
+# Extract the base64 token string
+TOKEN=$(sed -n 's/.*"token":"\([a-zA-Z0-9+/=]\{50,\}\)".*/\1/p' "$TMP_JSON")
+
 echo "Extracted Token: $TOKEN" | tee -a "$LOG_FILE"
 
-# Conn4 hotspots usually require a POST to the /grant endpoint of the host
-API_HOST="rewe-wlan.conn4.com"
-GRANT_URL="https://$API_HOST/grant"
+# Conn4 portals require a post to the WBS return endpoint which initializes the session
+# This follows the WISPAccessGatewayParam structure provided in the HTML
+RETURN_URL="https://rewe-wlan.conn4.com/wbs/de/roaming/return/"
 
-echo "Sending authorization request..." | tee -a "$LOG_FILE"
-JSON_PAYLOAD=$(printf '{"token":"%s"}' "$TOKEN")
-
-RESPONSE_CODE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -o /dev/null -w "%{http_code}" -H "Content-Type: application/json" -d "$JSON_PAYLOAD" -m 15 "$GRANT_URL")
+echo "Submitting token to return endpoint..." | tee -a "$LOG_FILE"
+RESPONSE_CODE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -o /dev/null -w "%{http_code}" -d "token=$TOKEN" -m 15 "$RETURN_URL")
 echo "HTTP Response: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
-if [ "$RESPONSE_CODE" != "200" ] && [ "$RESPONSE_CODE" != "302" ]; then
-   echo "Attempting fallback POST to root..." | tee -a "$LOG_FILE"
-   curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -o /dev/null -d "token=$TOKEN" -m 15 "https://$API_HOST/" > /dev/null 2>&1
-fi
-
+# Final connectivity check
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
