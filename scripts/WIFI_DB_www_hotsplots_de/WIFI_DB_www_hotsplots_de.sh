@@ -1,9 +1,7 @@
 #!/bin/sh
-# SCRIPT_VERSION="1.1.0"
-
+# SCRIPT_VERSION="1.0.0"
 LOG_FILE="/tmp/portal_login.log"
 COOKIE_FILE=$(mktemp)
-HTML_OUT=$(mktemp)
 trap 'rm -f "$COOKIE_FILE" "$HTML_OUT"' EXIT
 
 echo "Starting Hotsplots portal login process..." | tee -a "$LOG_FILE"
@@ -20,10 +18,12 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching initial redirect to gather parameters..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -c "$COOKIE_FILE" -o "$HTML_OUT" -w "% {url_effective}" -m 15 "http://neverssl.com" | tr -d '\015')
+HTML_OUT=$(mktemp)
+USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-echo "Extracting dynamic form parameters..." | tee -a "$LOG_FILE"
+echo "Fetching landing page to extract session parameters..." | tee -a "$LOG_FILE"
+EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_OUT" -w "% {url_effective}" -m 15 "http://neverssl.com" | tr -d '\015')
+
 CHALLENGE=$(sed -n 's/.*name="challenge" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | tr -d '\015')
 UAMIP=$(sed -n 's/.*name="uamip" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | tr -d '\015')
 UAMPORT=$(sed -n 's/.*name="uamport" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | tr -d '\015')
@@ -31,12 +31,12 @@ NASID=$(sed -n 's/.*name="nasid" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | tr -d '
 USERURL=$(sed -n 's/.*name="userurl" value="\([^"]*\)".*/\1/p' "$HTML_OUT" | tr -d '\015')
 
 if [ -z "$CHALLENGE" ]; then
-    echo "Error: Could not extract challenge parameters." | tee -a "$LOG_FILE"
+    echo "Error: Could not extract mandatory form fields." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-echo "Submitting acceptance form..." | tee -a "$LOG_FILE"
-RESPONSE_CODE=$(curl -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST \
+echo "Submitting acceptance for terms and conditions..." | tee -a "$LOG_FILE"
+RESPONSE_CODE=$(curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -X POST \
 --data-urlencode "haveTerms=1" \
 --data-urlencode "termsOK=on" \
 --data-urlencode "challenge=$CHALLENGE" \
@@ -45,16 +45,16 @@ RESPONSE_CODE=$(curl -k -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKi
 --data-urlencode "userurl=$USERURL" \
 --data-urlencode "myLogin=agb" \
 --data-urlencode "nasid=$NASID" \
---data-urlencode "button=Jetzt kostenlos surfen" \
 --data-urlencode "custom=1" \
--w "% {http_code}" -o "$HTML_OUT" -m 15 "https://www.hotsplots.de/auth/login.php" | tr -d '\015')
+--data-urlencode "button=Jetzt kostenlos surfen" \
+-w "%{http_code}" -o /dev/null -m 15 "https://www.hotsplots.de/auth/login.php")
 
 echo "Portal submission HTTP Response: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "% {http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
@@ -63,5 +63,5 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$((i + 1))
 done
-echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
+echo "ERROR: Portal request completed but no Internet connectivity established." | tee -a "$LOG_FILE"
 exit 1
