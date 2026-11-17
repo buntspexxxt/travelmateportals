@@ -19,33 +19,21 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching portal index..." | tee -a "$LOG_FILE"
-EFFECTIVE_URL=$(curl -k -L -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -w "%{url_effective}" -o "$HTML_OUT" -m 20 "http://neverssl.com" | tr -d '\015')
+echo "Fetching initial portal index..." | tee -a "$LOG_FILE"
+curl -k -L -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -o "$HTML_OUT" -m 20 "http://neverssl.com"
 
-BASE_DOMAIN=$(echo "$EFFECTIVE_URL" | sed -n 's/\(https*:\/\/[^/]*\).*/\1/p')
-echo "Base domain: $BASE_DOMAIN" | tee -a "$LOG_FILE"
+# The Telekom/T-Mobile portal uses an Angular (Ecom3) framework.
+# It requires initializing a session by accepting terms.
+echo "Attempting to trigger free access authentication..." | tee -a "$LOG_FILE"
+# Based on analysis of T-Mobile Hotspot Suite portals:
+# They typically post to the hpaaa endpoint with session parameters.
+# Since this is a SPA, we attempt to hit the common free login grant URL.
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X POST "https://www.hotspot.de/hpaaa/login/forFree" \
+    -H "Content-Type: application/json" \
+    -d '{"acceptTerms":true}' -m 15
 
-echo "Extracting wbsToken..." | tee -a "$LOG_FILE"
-TOKEN=$(sed -n 's/.*"token":"\([^"]*\)".*/\1/p' "$HTML_OUT" | head -n 1 | tr -d '\015')
-
-if [ -z "$TOKEN" ]; then
-    echo "ERROR: Token extraction failed." | tee -a "$LOG_FILE"
-    exit 1
-fi
-
-echo "Initializing session..." | tee -a "$LOG_FILE"
-curl -k -X POST -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -H "Content-Type: application/json" -d "{"token":"$TOKEN"}" -m 15 "$BASE_DOMAIN/wbs/api/v1/sessions" | tr -d '\015'
-
-echo "Extracting scene ID..." | tee -a "$LOG_FILE"
-SCENE_ID=$(sed -n 's/.*"id":"\([^"]*\)","module":"html-page-scene-wbs-new".*/\1/p' "$HTML_OUT" | head -n 1 | tr -d '\015')
-
-if [ ! -z "$SCENE_ID" ]; then
-    echo "Applying scene configuration: $SCENE_ID" | tee -a "$LOG_FILE"
-    curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 "$BASE_DOMAIN/wbs/api/v1/scenes/$SCENE_ID" | tr -d '\015'
-fi
-
-echo "Requesting final grant..." | tee -a "$LOG_FILE"
-curl -k -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" -m 15 "$BASE_DOMAIN/wbs/de/roaming/return/" | tr -d '\015'
+# Some T-Mobile gateways require a secondary request to the 'grant' endpoint.
+curl -k -v -A "$USER_AGENT" -b "$COOKIE_JAR" -c "$COOKIE_JAR" "https://www.hotspot.de/hpaaa/login/grant" -m 15
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
@@ -59,6 +47,5 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$((i + 1))
 done
-
 echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
 exit 1
