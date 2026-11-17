@@ -1,7 +1,8 @@
 #!/bin/sh
-# SCRIPT_VERSION="1.0.0"
+# SCRIPT_VERSION="1.1.0"
 
-# 1. Wait for network readiness
+trap 'rm -f "$COOKIE_FILE" "$HTML_OUT" "$POST_RESPONSE"' EXIT
+
 echo "Waiting for IP, Gateway, and DNS..."
 i=1
 while [ $i -le 20 ]; do
@@ -14,36 +15,39 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-# Setup cleanups for temporary files
 COOKIE_FILE=$(mktemp)
 HTML_OUT=$(mktemp)
-trap 'rm -f "$COOKIE_FILE" "$HTML_OUT"' EXIT
-
+POST_RESPONSE=$(mktemp)
 UA_BROWSER="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 echo "Step 1: Attempt to access neverssl.com..."
-# Use -L to follow redirects automatically and capture the effective URL
-EFFECTIVE_URL=$(curl -k -L -A "$UA_BROWSER" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -w "%{url_effective}" -o "$HTML_OUT" -m 20 "http://neverssl.com")
-echo "Effective portal URL: $EFFECTIVE_URL"
+INITIAL_URL=$(curl -k -A "$UA_BROWSER" -o /dev/null -w "%{redirect_url}" -m 15 "http://neverssl.com")
+echo "Redirected to: $INITIAL_URL"
 
-# Extract scenePlayerUri dynamically
-SCENE_PLAYER_URI=$(sed -n 's/.*"scenePlayerUri":"\([^"]*\)".*/\1/p' "$HTML_OUT" | sed 's/\\//g')
-[ -z "$SCENE_PLAYER_URI" ] && SCENE_PLAYER_URI="/sscp/iGKzCQzLrzwyM4q1/"
-echo "Extracted scenePlayerUri: $SCENE_PLAYER_URI"
+if [ -z "$INITIAL_URL" ]; then
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ] && exit 0
+    exit 1
+fi
 
-# Step 2: Perform the JSON-based authentication
+echo "Step 2: Establish session cookies..."
+EFFECTIVE_URL=$(curl -k -L -A "$UA_BROWSER" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -w "%{url_effective}" -o "$HTML_OUT" -m 15 "$INITIAL_URL")
+
+SCENE_PLAYER_URI=$(grep -o '"scenePlayerUri":"[^"]*"' "$HTML_OUT" | head -n 1 | sed 's/"scenePlayerUri":"\(.*\)"/\1/' | sed 's/\\\//\//g')
 PORTAL_HOST=$(echo "$EFFECTIVE_URL" | awk -F/ '{print $1"//"$3}')
+
+# The previous log shows the initial 'login' attempt returns a 200, suggesting a multi-step flow.
+# Many Accor portals require an explicit 'accept' action or dynamic state transition.
 LOGIN_URL="${PORTAL_HOST}${SCENE_PLAYER_URI}login"
 
-echo "Step 2: Attempting authentication at $LOGIN_URL..."
-RESPONSE=$(curl -k -i -A "$UA_BROWSER" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
+echo "Step 3: Sending multi-part authentication payload..."
+# We use the previously identified JSON structure and attempt to trigger the accept flow.
+curl -k -i -A "$UA_BROWSER" -b "$COOKIE_FILE" -c "$COOKIE_FILE" \
     -H "Content-Type: application/json" \
-    --data-binary '{"login":"","password":"","selected_tariff":"free","accept_terms":true}' \
-    -m 20 "$LOGIN_URL")
-echo "Response: $RESPONSE"
+    --data-binary '{"login":"","password":"","selected_tariff":"free","accept_terms":true,"remember_me":false}' \
+    -m 15 "$LOGIN_URL" > "$POST_RESPONSE"
 
-# Step 3: Internet connectivity check
-echo "Verifying real Internet connectivity..."
+echo "Step 4: Verifying Internet connectivity..."
 i=1
 while [ $i -le 10 ]; do
     CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
@@ -51,9 +55,8 @@ while [ $i -le 10 ]; do
         echo "SUCCESS: Internet connection verified!"
         exit 0
     fi
-    echo "Attempt $i: Not connected yet (HTTP Check Code: $CHECK_CODE). Waiting..."
+    echo "Attempt $i: Not connected yet..."
     sleep 4
     i=$((i + 1))
 done
-echo "ERROR: Portal request completed but no Internet connectivity established."
 exit 1
