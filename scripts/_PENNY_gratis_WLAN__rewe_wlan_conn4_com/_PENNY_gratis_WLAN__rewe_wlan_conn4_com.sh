@@ -22,11 +22,11 @@ HTML_OUT=$(mktemp)
 TMP_JSON=$(mktemp)
 USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-echo "Fetching portal landing to initialize session..." | tee -a "$LOG_FILE"
+echo "Fetching initial portal page..." | tee -a "$LOG_FILE"
 curl -k -L -A "$USER_AGENT" -c "$COOKIE_FILE" -o "$HTML_OUT" -m 15 "http://neverssl.com" > /dev/null 2>&1
 
-echo "Extracting wbsToken..." | tee -a "$LOG_FILE"
-# Extracting the wbsToken JSON object from the script block in HTML
+echo "Extracting token..." | tee -a "$LOG_FILE"
+# Extracting the wbsToken JSON from the script block
 TOKEN_JSON=$(sed -n 's/.*conn4.hotspot.wbsToken = \({.*}\);.*/\1/p' "$HTML_OUT" | tr -d '\015')
 
 if [ -z "$TOKEN_JSON" ]; then
@@ -35,17 +35,16 @@ if [ -z "$TOKEN_JSON" ]; then
 fi
 
 echo "$TOKEN_JSON" > "$TMP_JSON"
-TOKEN=$(sed -n 's/.*"token":"\([a-zA-Z0-9+/=]\{50,\}\)".*/\1/p' "$TMP_JSON")
+TOKEN=$(sed -n 's/.*"token":"\([a-zA-Z0-9+/=]\\{50,\\}\)".*/\1/p' "$TMP_JSON")
 
-echo "Submitting authentication token to return endpoint..." | tee -a "$LOG_FILE"
-# Using the return endpoint identified in the HTML
+echo "Authenticating with wbsToken..." | tee -a "$LOG_FILE"
 RETURN_URL="https://rewe-wlan.conn4.com/wbs/de/roaming/return/"
 RESPONSE_CODE=$(curl -k -v -A "$USER_AGENT" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -o /dev/null -w "%{http_code}" --data-urlencode "token=$TOKEN" -m 15 "$RETURN_URL")
 
 echo "HTTP Response: $RESPONSE_CODE" | tee -a "$LOG_FILE"
 
-# Conn4 often requires a secondary fetch to confirm access
-echo "Performing final session validation..." | tee -a "$LOG_FILE"
+echo "Performing secondary scene activation..." | tee -a "$LOG_FILE"
+# Based on the JS logic, startSceneLoader is triggered. We simulate a request to the root.
 curl -k -A "$USER_AGENT" -b "$COOKIE_FILE" -o /dev/null -m 15 "https://rewe-wlan.conn4.com/" > /dev/null 2>&1
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
@@ -60,6 +59,5 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$((i + 1))
 done
-
-echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
+echo "ERROR: Portal request completed but no Internet connectivity established." | tee -a "$LOG_FILE"
 exit 1
