@@ -1,6 +1,5 @@
 #!/bin/sh
 # SCRIPT_VERSION="1.0.0"
-
 LOG_FILE="/tmp/telekom_login.log"
 trap 'rm -f "$COOKIE_FILE" "$HTML_OUT"' EXIT
 COOKIE_FILE=$(mktemp)
@@ -19,15 +18,12 @@ while [ $i -le 20 ]; do
     i=$((i + 1))
 done
 
-echo "Fetching redirect to identify portal..." | tee -a "$LOG_FILE"
-REDIRECT_URL=$(curl -k -L -A "$UA" -c "$COOKIE_FILE" -w "%\{url_effective\}" -o "$HTML_OUT" -m 15 "http://neverssl.com")
-REDIRECT_URL=$(echo "$REDIRECT_URL" | tr -d '\015')
-echo "Effective URL: $REDIRECT_URL" | tee -a "$LOG_FILE"
+echo "Fetching portal redirection..." | tee -a "$LOG_FILE"
+REDIRECT_URL=$(curl -k -L -A "$UA" -c "$COOKIE_FILE" -w "%{url_effective}" -o "$HTML_OUT" -m 15 "http://neverssl.com" | tr -d '\015')
 
-echo "Submitting Free Login request..." | tee -a "$LOG_FILE"
-# Based on T-Mobile Ecom3 architecture, the login endpoint typically expects a POST to the rest API
-# Note: This portal is an Angular PWA, simple POSTing might be subject to XSRF protections if not handled correctly
-# We attempt the standardized free login path identified in reference documentation
+echo "Attempting T-Mobile Hotspot login..." | tee -a "$LOG_FILE"
+# The 'success' response indicates previous steps might be cached or incomplete.
+# We force a re-trigger of the login flow by hitting the auth endpoint with required parameters.
 RESPONSE=$(curl -k -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -v \
     -H "Content-Type: application/x-www-form-urlencoded" \
     --data-urlencode "button=Login" \
@@ -35,12 +31,12 @@ RESPONSE=$(curl -k -A "$UA" -b "$COOKIE_FILE" -c "$COOKIE_FILE" -L -v \
     --data-urlencode "OriginatingServer=$REDIRECT_URL" \
     "https://hotspot.t-mobile.net/wlan/rest/freeLogin" 2>&1)
 
-echo "HTTP Response: $RESPONSE" | tee -a "$LOG_FILE"
+echo "Submission response received." | tee -a "$LOG_FILE"
 
 echo "Verifying real Internet connectivity (polling for up to 40 seconds)..." | tee -a "$LOG_FILE"
 i=1
 while [ $i -le 10 ]; do
-    CHECK_CODE=$(curl -k -s -o /dev/null -w "%\{http_code\}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
+    CHECK_CODE=$(curl -k -s -o /dev/null -w "%{http_code}" -m 8 "http://connectivitycheck.gstatic.com/generate_204")
     if [ "$CHECK_CODE" = "204" ] || [ "$CHECK_CODE" = "200" ]; then
         echo "SUCCESS: Internet connection verified!" | tee -a "$LOG_FILE"
         exit 0
@@ -49,5 +45,6 @@ while [ $i -le 10 ]; do
     sleep 4
     i=$((i + 1))
 done
-echo "ERROR: Portal request completed but no Internet connectivity established after 40 seconds." | tee -a "$LOG_FILE"
+
+echo "ERROR: Portal request completed but no Internet connectivity established." | tee -a "$LOG_FILE"
 exit 1
